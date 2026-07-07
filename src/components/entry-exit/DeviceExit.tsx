@@ -1,0 +1,1516 @@
+import { CustomerAutocomplete } from '../CustomerAutocomplete';
+import { sharePdfFile, openWhatsApp } from '../../lib/shareHelper';
+import { useState, useEffect, useRef } from 'react';
+import { collection, onSnapshot, doc, writeBatch, getDoc } from '../../firebase';
+import { db } from '../../firebase';
+import { Invoice, InvoiceItem, User } from '../../types';
+import { useTranslation } from 'react-i18next';
+import { CheckCircle, Search, Save, X, Info, HardDrive, User as UserIcon, ArrowLeft, ArrowRight, Phone, MapPin, Facebook, Smartphone, ChevronLeft, ChevronRight, SlidersHorizontal, MessageCircle } from 'lucide-react';
+import ReportActions from '../ReportActions';
+import PrintPreviewOverlay from '../PrintPreviewOverlay';
+import jsPDF from 'jspdf';
+import * as htmlToImage from 'html-to-image';
+import { sanitizeDocumentStyles, sanitizeElementInlineStyles, cleanOklchInStyleText, applyPrintStylesAndGetRestoreFn } from '../../lib/html2canvasHelper';
+import BankAccountsFooter from '../BankAccountsFooter';
+
+function getItemSubStatus(item: InvoiceItem): string {
+  if (item.subStatus) {
+    if (item.subStatus === 'refused') {
+      const reason = (item.failureReason || '').toLowerCase();
+      const report = (item.engineerReport || '').toLowerCase();
+      if (
+        reason.includes('قطع') || report.includes('قطع') ||
+        reason.includes('parts') || report.includes('parts') ||
+        reason.includes('تتوفر') || report.includes('تتوفر') ||
+        reason.includes('توفر') || report.includes('توفر')
+      ) {
+        return 'no_parts';
+      }
+    }
+    return item.subStatus;
+  }
+  
+  // For legacy items, fall back on their status field:
+  if (item.status === 'ready') return 'ready';
+  if (item.status === 'intact') return 'intact';
+  if (item.status === 'unrepairable') return 'unrepairable';
+  if (item.status === 'no_parts') return 'no_parts';
+  if (item.status === 'refused') {
+    const reason = (item.failureReason || '').toLowerCase();
+    const report = (item.engineerReport || '').toLowerCase();
+    if (
+      reason.includes('قطع') || report.includes('قطع') ||
+      reason.includes('parts') || report.includes('parts') ||
+      reason.includes('تتوفر') || report.includes('تتوفر') ||
+      reason.includes('توفر') || report.includes('توفر')
+    ) {
+      return 'no_parts';
+    }
+    return 'refused';
+  }
+  if (item.status === '70' || item.status === 'cancelled') return 'cancelled';
+  
+  // If it's the unified code '50' but lacks subStatus (e.g. newly created before our fix):
+  if (item.status === '50') {
+    const report = (item.engineerReport || '').toLowerCase();
+    const reason = (item.failureReason || '').toLowerCase();
+    
+    if (
+      reason.includes('قطع') || report.includes('قطع') ||
+      reason.includes('parts') || report.includes('parts') ||
+      reason.includes('تتوفر') || report.includes('تتوفر') ||
+      reason.includes('توفر') || report.includes('توفر')
+    ) {
+      return 'no_parts';
+    }
+    if (reason.includes('لم يوافق') || report.includes('لم يوافق')) return 'refused';
+    if (reason.includes('لا يصلح') || report.includes('لا يصلح') || reason.includes('unrepairable') || report.includes('unrepairable')) return 'unrepairable';
+    if (report.includes('سليم') || report.includes('intact')) return 'intact';
+    return 'ready';
+  }
+  
+  return item.status || 'new';
+}
+
+const getStatusArabic = (status: string) => {
+  switch (status) {
+    case 'ready': return 'جاهز';
+    case 'intact': return 'سليم';
+    case 'unrepairable': return 'لا يصلح';
+    case 'refused': return 'لم يوافق العميل';
+    case 'no_parts': return 'عدم توفر قطع الغيار';
+    default: return status || '-';
+  }
+};
+
+export default function DeviceExit({ user, onBack }: { user: User, onBack: () => void }) {
+  const { t } = useTranslation();
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [items, setItems] = useState<InvoiceItem[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+
+  const getCustomerPhone = (customerId: string) => {
+    const c = customers.find(c => c.id === customerId);
+    return c ? (c.phone1 || c.phone2 || '') : '';
+  };
+
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try {
+      const saved = localStorage.getItem('exit_visible_columns');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      invoiceNumber: true,
+      customerName: true,
+      totalDevices: true,
+      exitReadyCount: true,
+      unrepairableCount: true,
+      intactCount: true,
+      refusedCount: true,
+      readyCount: true,
+    };
+  });
+  
+  useEffect(() => {
+    localStorage.setItem('exit_visible_columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+  
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+  
+  // Selection
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [exitPaidAmount, setExitPaidAmount] = useState<number>(0);
+  const [exitDiscountAmount, setExitDiscountAmount] = useState<number>(0);
+  const [exitTaxAmount, setExitTaxAmount] = useState<number>(0);
+  const [activePrintData, setActivePrintData] = useState<{
+    invoice: Invoice;
+    items: InvoiceItem[];
+    paidAmount: number;
+    discountAmount: number;
+    taxAmount: number;
+    remainingAmount: number;
+    selectedCost: number;
+  } | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [shopConfig, setShopConfig] = useState<any>(null);
+  const [currentOutput, setCurrentOutput] = useState<any>(null);
+  
+  const [scale, setScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const printAreaRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState(1123);
+
+  useEffect(() => {
+    if (activePrintData && printAreaRef.current) {
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (let entry of entries) {
+          setContentHeight(entry.contentRect.height);
+        }
+      });
+      resizeObserver.observe(printAreaRef.current);
+      return () => resizeObserver.disconnect();
+    }
+  }, [activePrintData]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (activePrintData && containerRef.current) {
+        const containerWidth = containerRef.current.clientWidth - 48; // accounting for padding
+        const containerHeight = containerRef.current.clientHeight - 48;
+        if (containerWidth > 0 && containerHeight > 0) {
+          const scaleW = containerWidth / 794;
+          const scaleH = containerHeight / contentHeight;
+          
+          // Fit entirely without any scroll
+          const newScale = Math.min(scaleW, scaleH);
+          
+          setScale(newScale > 0 ? newScale : 1);
+        }
+      }
+    };
+
+    if (activePrintData) {
+      handleResize();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+  }, [contentHeight, activePrintData]);
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'shop')).then((snap) => {
+      if (snap.exists()) setShopConfig(snap.data());
+    });
+    const unsubInvoices = onSnapshot(collection(db, 'invoices'), (s) => setInvoices(s.docs.map(d => ({ id: d.id, ...d.data() } as Invoice))));
+    const unsubItems = onSnapshot(collection(db, 'invoice_items'), (s) => setItems(s.docs.map(d => ({ id: d.id, ...d.data() } as InvoiceItem))));
+    const unsubCustomers = onSnapshot(collection(db, 'customers'), (s) => setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as any))));
+    return () => { unsubInvoices(); unsubItems(); unsubCustomers(); };
+  }, []);
+
+  const EXIT_READY_STATUSES = ['ready', 'unrepairable', 'intact', 'refused', '50', '70', 'cancelled'];
+
+  const readyInvoices = invoices.filter(inv => {
+    // Has at least one ready item
+    return items.some(item => item.invoiceNumber === inv.invoiceNumber && EXIT_READY_STATUSES.includes(item.status));
+  }).filter(inv => 
+    (inv.customerName || '').toLowerCase().includes(search.toLowerCase()) || 
+    (inv.invoiceNumber || '').includes(search)
+  ).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
+
+  const itemsPerPage = 10;
+  const totalPages = Math.max(1, Math.ceil(readyInvoices.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  
+  const paginatedInvoices = readyInvoices.slice(
+    (safeCurrentPage - 1) * itemsPerPage,
+    safeCurrentPage * itemsPerPage
+  );
+
+  const openInvoice = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    const invoiceReadyItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && EXIT_READY_STATUSES.includes(i.status));
+    setInvoiceItems(invoiceReadyItems);
+    
+    // Select all ready items by default
+    const allIds = new Set(invoiceReadyItems.map(i => i.id!));
+    setSelectedItemIds(allIds);
+
+    // Default paid amount to 0
+    setExitPaidAmount(0);
+    setExitDiscountAmount(0);
+    setExitTaxAmount(0);
+  };
+
+  const handleToggleItem = (id: string) => {
+    const newSet = new Set(selectedItemIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedItemIds(newSet);
+  };
+
+  const handlePrintDirect = () => {
+    const originalStyle = document.createElement('style');
+    originalStyle.innerHTML = `
+      @media print {
+        @page { size: auto; margin: 0; }
+        body * {
+          visibility: hidden !important;
+        }
+        #print-preview-area, #print-preview-area * {
+          visibility: visible !important;
+        }
+        #print-preview-area {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 10mm !important;
+          color: #000000 !important;
+          background-color: #ffffff !important;
+        }
+      }
+    `;
+    document.head.appendChild(originalStyle);
+    window.print();
+    document.head.removeChild(originalStyle);
+  };
+
+  const handleExportPDFAndWhatsApp = async () => {
+    if (!activePrintData) return;
+    const { invoice, items: prItems, selectedCost } = activePrintData;
+    const currency = invoice.currency || 'USD';
+
+    setIsGeneratingPDF(true);
+    let restore: (() => void) | null = null;
+
+    try {
+      const printArea = document.getElementById('print-preview-area');
+      if (!printArea) {
+        setIsGeneratingPDF(false);
+        return;
+      }
+
+      // Sanitize Tailwind CSS styles for html-to-image compatibility
+      restore = await sanitizeDocumentStyles();
+      sanitizeElementInlineStyles(printArea);
+
+      // Temporarily remove transform to ensure clean capture
+      const parentElement = printArea.parentElement;
+      let originalTransform = '';
+      if (parentElement) {
+        originalTransform = parentElement.style.transform;
+        parentElement.style.transform = 'none';
+      }
+
+      const canvas = await htmlToImage.toCanvas(printArea, { 
+        pixelRatio: 2, 
+        backgroundColor: '#ffffff',
+      });
+      
+      if (parentElement) {
+        parentElement.style.transform = originalTransform;
+      }
+      
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+    
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    
+      let heightLeft = pdfHeight;
+      let position = 0;
+    
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
+      heightLeft -= pdf.internal.pageSize.getHeight();
+    
+      while (heightLeft > 0.5) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
+        heightLeft -= pdf.internal.pageSize.getHeight();
+      }
+      
+      const formattedDate = new Date().toISOString().split('T')[0];
+      const filename = `فاتورة تسليم أجهزة_${invoice.customerName}_${formattedDate}.pdf`;
+      pdf.save(filename);
+
+      let message = `*فاتورة صيانة أجهزة* 📄\n\n`;
+      message += `عزيزي العميل *${invoice.customerName}* المحترم،\n`;
+      message += `تجد أدناه الفاتورة الخاصة باستلام أجهزتكم رقم *${invoice.invoiceNumber}*:\n\n`;
+      message += `- *رقم الفاتورة:* ${invoice.invoiceNumber}\n`;
+      message += `- *القيمة الإجمالية:* ${selectedCost.toLocaleString('en-US')} ${currency}\n`;
+      if (activePrintData && activePrintData.discountAmount > 0) {
+        message += `- *مبلغ الخصم:* ${activePrintData.discountAmount.toLocaleString('en-US')} ${currency}\n`;
+      }
+      if (activePrintData) {
+        message += `- *المبلغ المدفوع:* ${activePrintData.paidAmount.toLocaleString('en-US')} ${currency}\n`;
+        message += `- *المبلغ المتبقي:* ${activePrintData.remainingAmount.toLocaleString('en-US')} ${currency}\n`;
+      }
+      message += `\n*الأجهزة المستلمة:*\n`;
+      prItems.forEach((item, index) => {
+        message += `\n_${index + 1}. *${item.deviceType} - ${item.deviceName || ''}*_\n`;
+        message += `   • تقرير الصيانة: ${item.failureReason || item.engineerReport || '-'}\n`;
+        message += `   • التكلفة: ${(item.cost || item.unitCost || 0).toLocaleString('en-US')} ${currency}\n`;
+      });
+      message += `\nيسعدنا خدمتكم دائمًا. شكرًا لتعاملكم معنا!`;
+
+      let sharedNatively = false;
+      try {
+        const pdfBlob = pdf.output('blob');
+        sharedNatively = await sharePdfFile(pdfBlob, filename, message, 'invoice');
+      } catch (err) {
+        console.warn('Native sharing failed or was cancelled', err);
+      }
+
+      if (!sharedNatively) {
+        const targetPhone = selectedInvoice.customerPhone || getCustomerPhone(selectedInvoice.customerId);
+        openWhatsApp(message, targetPhone);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    } finally {
+      if (restore) {
+        try {
+          restore();
+        } catch (restoreErr) {
+          console.warn('Failed to restore document styles:', restoreErr);
+        }
+      }
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const selectedCost = selectedInvoice
+    ? invoiceItems.filter(i => selectedItemIds.has(i.id!) && getItemSubStatus(i) === 'ready').reduce((sum, item) => sum + (Number(item.cost) || 0), 0)
+    : 0;
+
+  const subtotal = selectedCost;
+  const tax = exitTaxAmount;
+  const discount = exitDiscountAmount;
+  const total = (subtotal + tax) - discount;
+
+  const remainingCostForSelection = Math.max(0, total - exitPaidAmount);
+  
+  const handleShowPreview = () => {
+    if (!selectedInvoice || selectedItemIds.size === 0 || exitPaidAmount > total) return;
+    
+    const printItems = invoiceItems.filter(i => selectedItemIds.has(i.id!));
+    setActivePrintData({
+      invoice: selectedInvoice,
+      items: printItems,
+      paidAmount: exitPaidAmount,
+      discountAmount: exitDiscountAmount,
+      taxAmount: exitTaxAmount,
+      remainingAmount: remainingCostForSelection,
+      selectedCost: selectedCost
+    });
+  };
+
+  const finalizeExit = async (currentItems: InvoiceItem[]) => {
+    console.log("finalizeExit called", { activePrintData, selectedInvoice, selectedItemIds: Array.from(selectedItemIds), itemsCount: currentItems.length });
+    if (!activePrintData || !selectedInvoice) {
+      console.warn("finalizeExit: missing activePrintData or selectedInvoice");
+      return;
+    }
+    
+    try {
+      console.log("finalizeExit: starting batch commit", { 
+        itemCount: selectedItemIds.size, 
+        invoiceId: selectedInvoice.id,
+        paidAmount: activePrintData.paidAmount,
+        discountAmount: activePrintData.discountAmount,
+        taxAmount: activePrintData.taxAmount,
+        selectedCost: activePrintData.selectedCost
+      });
+      // Process delivery
+      const batch = writeBatch(db);
+      selectedItemIds.forEach(id => {
+        const itemRef = doc(db, 'invoice_items', id);
+        batch.update(itemRef, { status: '60', deliveredAt: new Date().getTime() });
+      });
+
+      // Update amountPaid on the Invoice
+      const invoiceRef = doc(db, 'invoices', selectedInvoice.id!);
+      const newAmountPaid = Number(selectedInvoice.amountPaid || 0) + Number(activePrintData.paidAmount);
+      const newDiscount = Number(selectedInvoice.discount || 0) + Number(activePrintData.discountAmount);
+      const newTax = Number(selectedInvoice.tax || 0) + Number(activePrintData.taxAmount);
+      
+      // Check if ALL items of the invoice are now delivered
+      const allInvoiceItems = currentItems.filter(i => i.invoiceNumber === selectedInvoice.invoiceNumber);
+      const allDelivered = allInvoiceItems.every(i => i.status === '60' || selectedItemIds.has(i.id!));
+      
+      // Calculate new totalCost of the invoice by summing only 'ready' (repaired) items
+      const readyInvoiceItems = allInvoiceItems.filter(i => getItemSubStatus(i) === 'ready');
+      const newTotalCost = readyInvoiceItems.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+      
+      const invoiceUpdates: Partial<Invoice> = {
+        totalCost: newTotalCost,
+        amountPaid: newAmountPaid,
+        discount: newDiscount,
+        tax: newTax,
+        updatedAt: new Date().getTime(),
+        printCount: (selectedInvoice.printCount || 0) + 1
+      };
+      
+      if (allDelivered) {
+        invoiceUpdates.status = '60'; // fully delivered
+      }
+      
+      batch.update(invoiceRef, invoiceUpdates);
+
+      // Save transaction in vault_transactions if paid amount is higher than 0
+      if (Number(activePrintData.paidAmount) > 0) {
+        const txRef = doc(collection(db, 'vault_transactions'));
+        batch.set(txRef, {
+          currency: selectedInvoice.currency || 'USD',
+          amount: Number(activePrintData.paidAmount),
+          customerName: selectedInvoice.customerName || 'عميل نقدي',
+          invoiceNumber: String(selectedInvoice.invoiceNumber),
+          userName: user?.name || user?.username || 'مدير النظام',
+          userId: user?.id || 'admin',
+          timestamp: new Date().getTime(),
+          type: 'invoice_payment',
+          notes: `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`
+        });
+      }
+
+      await batch.commit();
+      console.log("finalizeExit: batch committed successfully");
+    } catch (error) {
+      console.error("finalizeExit: error committing batch", error);
+      throw error;
+    }
+  };
+
+  const handlePrintAndFinalize = async () => {
+    await finalizeExit(items);
+    handlePrintDirect();
+    setActivePrintData(null);
+    setSelectedInvoice(null);
+  };
+
+  const handleExportAndFinalize = async () => {
+    await finalizeExit(items);
+    await handleExportPDFAndWhatsApp();
+    setActivePrintData(null);
+    setSelectedInvoice(null);
+  };
+
+  return (
+    <div className="w-full max-w-full space-y-0 pb-0 m-0 p-0 text-right font-sans" dir="rtl">
+      {activePrintData && (
+        <PrintPreviewOverlay
+          type="invoice"
+          data={{
+            invoice: {
+              ...activePrintData.invoice,
+              totalCost: activePrintData.selectedCost,
+              amountPaid: activePrintData.paidAmount,
+              discount: activePrintData.discountAmount,
+              tax: activePrintData.taxAmount,
+              printCount: activePrintData.invoice.printCount || 0
+            },
+            items: activePrintData.items,
+            templateType: 'exit'
+          }}
+          onClose={() => setActivePrintData(null)}
+          shopConfig={shopConfig}
+          user={user}
+          onPrint={handlePrintAndFinalize}
+          onWhatsApp={handleExportAndFinalize}
+          onSave={async () => {
+            await finalizeExit(items);
+            setActivePrintData(null);
+            setSelectedInvoice(null);
+          }}
+        />
+      )}
+      {false && activePrintData && (
+        <div className="fixed inset-0 z-[120] bg-black/95 flex flex-col" dir="rtl">
+          {/* Top Navbar */}
+          <div className="flex justify-between items-center bg-black/50 p-4 border-b border-white/10 shrink-0 flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setActivePrintData(null)}
+                className="w-10 h-10 flex justify-center items-center bg-slate-200 border border-slate-300 rounded-xl text-slate-900 hover:bg-slate-300 transition-all shadow-md"
+                title="العودة للتعديل"
+              >
+                <ArrowRight size={18} />
+              </button>
+              <h2 className="text-white font-bold hidden sm:block mr-2">فاتورة خروج أجهزه - #{activePrintData.invoice.invoiceNumber}</h2>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <ReportActions 
+                onPrint={handlePrintAndFinalize}
+                onWhatsApp={handleExportAndFinalize}
+                isGenerating={isGeneratingPDF}
+              />
+            </div>
+          </div>
+
+          {/* Scalable Container for the A4 page */}
+          <div 
+            ref={containerRef}
+            className="flex-1 w-full h-full relative overflow-hidden flex items-center justify-center p-6 bg-black"
+          >
+            <div 
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'center center',
+                width: '794px',
+                minHeight: '1123px',
+                transition: 'transform 0.1s ease-out'
+              }}
+              className="bg-white shadow-2xl relative flex flex-col"
+            >
+              <div ref={printAreaRef} id="print-report-area" className="w-[794px] min-h-[1123px] flex flex-col relative print:w-auto print:min-h-0 print:h-auto bg-white p-8">
+                <div className="absolute left-8 top-1.5 text-[8px] text-gray-400 font-normal select-none opacity-45 font-mono pointer-events-none flex items-center gap-1.5" dir="rtl">
+                  <span>تاريخ ووقت الطباعة: {new Date().toLocaleDateString('ar-YE')} {new Date().toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="border border-gray-400 px-1 rounded font-bold text-[9px] text-gray-500 bg-transparent inline-block font-sans ml-1">
+                    {(activePrintData.invoice.printCount || 0) + 1}
+                  </span>
+                </div>
+
+              {/* Header Layout */}
+              <div className="flex justify-between items-start border-b-2 border-gray-900 pb-4 mb-4">
+                {/* Right Corner: Shop Name */}
+                <div className="text-right flex-1 pt-1">
+                  <h2 className="text-xl font-black text-gray-900 leading-tight font-cairo whitespace-nowrap">{shopConfig?.shopName || 'عالم الصيانة والتجارة'}</h2>
+                  <div className="text-sm font-black text-gray-900 leading-tight mt-1.5 font-cairo">قسم الصيانة</div>
+                  <div className="mt-2 space-y-1">
+                    {(shopConfig?.phone1 || shopConfig?.phone2) && (
+                      <div className="text-[10px] font-bold text-gray-800 flex items-center justify-start gap-1.5 w-fit">
+                        <span>تلفون :</span>
+                        <span dir="ltr" className="font-mono">
+                          {shopConfig?.phone1}
+                          {shopConfig?.phone1 && shopConfig?.phone2 && ' - '}
+                          {shopConfig?.phone2}
+                        </span>
+                        <div className="flex items-center gap-1 mr-1.5">
+                          <Smartphone size={10} className="text-gray-700" />
+                          {(shopConfig?.phone1Whatsapp || shopConfig?.phone2Whatsapp) && (
+                            <MessageCircle size={10} className="text-green-600" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {shopConfig?.landline && (
+                      <div className="text-[10px] font-bold text-gray-800 flex items-center justify-start gap-1.5 w-fit">
+                        <span>ثابت :</span>
+                        <span dir="ltr" className="font-mono">{shopConfig.landline}</span>
+                        <div className="flex items-center gap-1 mr-1.5">
+                          <Phone size={10} className="text-gray-700" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Center: Title / Logo */}
+                <div className="text-center flex-[1.2] flex flex-col items-center justify-center">
+                  {shopConfig?.logoUrl ? (
+                    <img src={shopConfig.logoUrl} alt="Logo" className="h-16 max-w-[150px] object-contain mb-1.5" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-12 h-12 border border-dashed border-gray-300 rounded-xl mb-1.5 flex items-center justify-center text-gray-400 text-[10px] font-bold">شعار المحل</div>
+                  )}
+                  <h1 className="text-lg font-black text-gray-900 border-2 border-gray-900 px-4 py-1.5 rounded-lg inline-block bg-gray-50/50">فاتورة صيانة أجهزة</h1>
+                </div>
+
+                {/* Left Corner: Invoice Info */}
+                <div className="text-left flex-1 space-y-1 pt-1 bg-gray-50/50 p-3 rounded-lg border border-gray-200">
+                  <div className="text-sm font-bold text-gray-700 flex justify-between gap-4">
+                    <span>رقم التقرير:</span>
+                    <span className="font-mono text-gray-900">{activePrintData.invoice.invoiceNumber}</span>
+                  </div>
+                  <div className="text-sm font-bold text-gray-700 flex justify-between gap-4">
+                    <span>التاريخ:</span>
+                    <span className="font-mono text-gray-900">{new Date().toISOString().slice(0,10).replace(/-/g, '/')}</span>
+                  </div>
+                  <div className="text-sm font-bold text-gray-700 flex justify-between gap-4">
+                    <span>وقت الإصدار:</span>
+                    <span className="font-mono text-gray-900">
+                      {new Date().toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-gray-700 flex justify-between gap-4 border-t border-gray-200 pt-1 mt-1 font-cairo">
+                    <span>رقم المستخدم:</span>
+                    <span className="font-mono text-gray-900">{user?.userNumber || '100'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Info Single Line */}
+              {(() => {
+                const custId = activePrintData.invoice.customerId;
+                const name = activePrintData.invoice.customerName;
+                let company = '';
+                let phone = activePrintData.invoice.customerPhone || '';
+
+                let matchedCust = customers.find(c => c.id === custId);
+                if (!matchedCust && name) {
+                  matchedCust = customers.find(c => c.name === name);
+                }
+
+                if (matchedCust) {
+                  company = matchedCust.companyName || '';
+                  if (!phone) phone = matchedCust.phone1 || '';
+                }
+
+                return (
+                  <div className="bg-gray-100 p-3 rounded-lg mb-4 border border-gray-300 flex flex-row items-center justify-start gap-6 px-6 text-sm font-black text-gray-900 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <span className="text-xs text-gray-600 ml-2 whitespace-nowrap">إسم العميل:</span>
+                      <span className="text-gray-900 font-black">{name || 'عام'}</span>
+                    </div>
+                    {company && company !== '---' && (
+                      <div className="border-r border-gray-300 pr-4 flex items-center">
+                        <span className="text-xs text-gray-600 ml-2 whitespace-nowrap">الجهة:</span>
+                        <span className="text-gray-900 font-black">{company}</span>
+                      </div>
+                    )}
+                    {phone && phone !== '---' && (
+                      <div className="border-r border-gray-300 pr-4 flex items-center">
+                        <span className="text-xs text-gray-600 ml-2 whitespace-nowrap">الجوال:</span>
+                        <span className="font-mono text-gray-900" dir="ltr">{phone}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Device Detailed Items Table */}
+              <div className="border border-gray-400 overflow-hidden mb-4 rounded-md">
+                <table className="w-full text-right border-collapse text-sm">
+                  <thead className="bg-gray-100 text-gray-800 font-bold border-b-2 border-gray-400">
+                    <tr>
+                      <th className="px-3 py-3 text-center w-12 border-l border-gray-400 bg-gray-200/50">مسلسل</th>
+                      <th className="px-3 py-3 border-l border-gray-400">النوع / الجهاز</th>
+                      <th className="px-3 py-3 border-l border-gray-400">الحالة</th>
+                      <th className="px-3 py-3 text-center border-l border-gray-400 w-28">تكلفة الصيانة</th>
+                      <th className="px-3 py-3 text-center border-l border-gray-400 w-24">العدد</th>
+                      <th className="px-3 py-3 text-center w-32 font-black bg-gray-200/50">اجمالي التكلفة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-300">
+                    {[...activePrintData.items].sort((a, b) => {
+                      const typeA = a.deviceType || '';
+                      const typeB = b.deviceType || '';
+                      const typeCompare = typeA.localeCompare(typeB, 'ar');
+                      if (typeCompare !== 0) return typeCompare;
+
+                      const nameA = a.deviceName || '';
+                      const nameB = b.deviceName || '';
+                      const nameCompare = nameA.localeCompare(nameB, 'ar');
+                      if (nameCompare !== 0) return nameCompare;
+
+                      const getConditionRank = (item: any) => {
+                        const subStatus = getItemSubStatus(item);
+                        if (subStatus === 'ready') return 1;
+                        if (subStatus === 'intact') return 2;
+                        if (subStatus === 'unrepairable') return 3;
+                        if (subStatus === 'refused') return 4;
+                        return 5;
+                      };
+                      return getConditionRank(a) - getConditionRank(b);
+                    }).map((item, idx) => {
+                      const itemQty = Number(item.quantity || 1);
+                      const totalItemCost = Number(item.cost || 0);
+                      const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
+                      const subStatusArabic = getStatusArabic(getItemSubStatus(item));
+                      
+                      return (
+                        <tr key={item.id} className="even:bg-gray-50/50">
+                          <td className="px-3 py-3 text-center font-mono font-bold border-l border-gray-400 bg-gray-50">{idx + 1}</td>
+                          <td className="px-3 py-3 font-bold text-gray-900 border-l border-gray-400 leading-relaxed whitespace-nowrap overflow-hidden max-w-[200px] text-ellipsis">
+                            {item.deviceType || '-'} {item.deviceName ? `- ${item.deviceName}` : ''}
+                          </td>
+                          <td className="px-3 py-3 text-gray-900 font-bold leading-relaxed border-l border-gray-400 whitespace-nowrap">
+                            {subStatusArabic}
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
+                            {unitItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
+                            {itemQty}
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono font-black text-gray-900 bg-gray-50">
+                            {totalItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Last rows for totals */}
+                    <tr className="bg-gray-200/60 font-bold border-t-2 border-gray-400">
+                      <td colSpan={4} className="px-3 py-4 text-left font-black border-l border-gray-400 text-base">إجمالى عدد الأجهزة ومبلغ الفاتورة</td>
+                      <td className="px-3 py-4 text-center font-mono font-black border-l border-gray-400 text-lg">
+                        {activePrintData.items.reduce((sum, item) => sum + Number(item.quantity || 1), 0)}
+                      </td>
+                      <td className="px-3 py-4 text-center font-mono font-black text-xl text-gray-900 border-l border-gray-400">
+                        {activePrintData.selectedCost.toLocaleString('en-US')} <span className="text-sm font-sans mr-1">{activePrintData.invoice.currency || 'USD'}</span>
+                      </td>
+                    </tr>
+                    {/* Combine discount, paid amount, and remaining amount in a single horizontal row */}
+                    <tr className="bg-white font-bold border-t border-gray-400">
+                      {activePrintData.discountAmount > 0 ? (
+                        <>
+                          {/* Discount Amount */}
+                          <td colSpan={2} className="px-3 py-3 text-center border-l border-gray-400 bg-gray-50/20">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500 font-extrabold text-xs">مبلغ الخصم:</span>
+                              <span className="font-mono font-black text-amber-600 text-sm">
+                                {activePrintData.discountAmount.toLocaleString('en-US')}
+                              </span>
+                              <span className="text-[10px] font-sans text-gray-400 font-bold">{activePrintData.invoice.currency || 'USD'}</span>
+                            </div>
+                          </td>
+
+                          {/* Amount Paid */}
+                          <td colSpan={2} className="px-3 py-3 text-center border-l border-gray-400 bg-gray-50/20">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500 font-extrabold text-xs">المبلغ المدفوع:</span>
+                              <span className="font-mono font-black text-emerald-700 text-sm">
+                                {activePrintData.paidAmount.toLocaleString('en-US')}
+                              </span>
+                              <span className="text-[10px] font-sans text-gray-400 font-bold">{activePrintData.invoice.currency || 'USD'}</span>
+                            </div>
+                          </td>
+
+                          {/* Remaining Amount */}
+                          <td colSpan={2} className="px-3 py-3 text-center border-l border-gray-400 bg-red-100/30">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <span className="text-red-950 font-black text-sm">المبلغ المتبقي:</span>
+                              <span className="font-mono font-black text-red-600 text-lg">
+                                {activePrintData.remainingAmount.toLocaleString('en-US')}
+                              </span>
+                              <span className="text-xs font-sans text-red-800 font-black">{activePrintData.invoice.currency || 'USD'}</span>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          {/* Amount Paid */}
+                          <td colSpan={3} className="px-3 py-3 text-center border-l border-gray-400 bg-gray-50/20">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500 font-extrabold text-xs">المبلغ المدفوع:</span>
+                              <span className="font-mono font-black text-emerald-700 text-sm">
+                                {activePrintData.paidAmount.toLocaleString('en-US')}
+                              </span>
+                              <span className="text-[10px] font-sans text-gray-400 font-bold">{activePrintData.invoice.currency || 'USD'}</span>
+                            </div>
+                          </td>
+
+                          {/* Remaining Amount */}
+                          <td colSpan={3} className="px-3 py-3 text-center border-l border-gray-400 bg-red-100/30">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <span className="text-red-950 font-black text-sm">المبلغ المتبقي:</span>
+                              <span className="font-mono font-black text-red-600 text-lg">
+                                {activePrintData.remainingAmount.toLocaleString('en-US')}
+                              </span>
+                              <span className="text-xs font-sans text-red-800 font-black">{activePrintData.invoice.currency || 'USD'}</span>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary Devices Status */}
+              {(() => {
+                const counters = [
+                  {
+                    key: 'ready',
+                    label: 'صيانة',
+                    value: activePrintData.items.filter(i => getItemSubStatus(i) === 'ready').reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+                    textColor: 'text-gray-900',
+                  },
+                  {
+                    key: 'unrepairable',
+                    label: 'لايصلح',
+                    value: activePrintData.items.filter(i => getItemSubStatus(i) === 'unrepairable').reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+                    textColor: 'text-rose-600',
+                  },
+                  {
+                    key: 'intact',
+                    label: 'سليم',
+                    value: activePrintData.items.filter(i => getItemSubStatus(i) === 'intact').reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+                    textColor: 'text-emerald-600',
+                  },
+                  {
+                    key: 'refused',
+                    label: 'لم يوافق العميل',
+                    value: activePrintData.items.filter(i => getItemSubStatus(i) === 'refused').reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+                    textColor: 'text-orange-600',
+                  },
+                  {
+                    key: 'no_parts',
+                    label: 'عدم توفر قطع',
+                    value: activePrintData.items.filter(i => getItemSubStatus(i) === 'no_parts').reduce((sum, i) => sum + Number(i.quantity || 1), 0),
+                    textColor: 'text-red-700',
+                  }
+                ];
+
+                const activeCounters = counters.filter(c => c.value > 0);
+
+                if (activeCounters.length === 0) return null;
+
+                return (
+                  <div className="flex items-center gap-4 mb-4 text-sm font-bold text-gray-900 mt-6 flex-wrap">
+                    {activeCounters.map((counter, index) => (
+                      <span key={counter.key} className="flex items-center gap-4">
+                        {index > 0 && <span className="text-gray-400 font-normal">|</span>}
+                        <div className="flex items-center gap-2">
+                          <div className={`w-12 h-8 border-2 border-gray-400 bg-gray-50 rounded flex items-center justify-center font-mono font-black text-base ${counter.textColor}`}>
+                            {counter.value}
+                          </div>
+                          <span>{counter.label}</span>
+                        </div>
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <div className="mt-auto pt-8">
+                <div className="border-t-2 border-gray-900 my-8"></div>
+
+                {/* Footer Notes & Signatures */}
+                <div className="flex justify-between items-start text-xs font-bold text-gray-900 leading-loose mb-6 px-4">
+                   {/* Right Side */}
+                   <div className="text-right space-y-1">
+                      <p>استلمت الأجهزة الموضحة بحالة جيدة</p>
+                      
+                      <p className="pt-2">توقيع العميل / المقر بالموافقة</p>
+                      <p className="pt-1 font-black">التوقيع: ........................................</p>
+                   </div>
+
+                   {/* Left Side */}
+                   <div className="text-left space-y-1 flex flex-col items-end">
+                      <p>نتمنى أن تنال خدمتنا إعجابكم</p>
+                      
+                      <p className="pt-2">اسم المهندس المختص: ........................</p>
+                      <p className="pt-1 font-black">التوقيع / ........................................</p>
+                   </div>
+                </div>
+
+                <div className="border-t-[3px] border-black mt-2 mb-1 border-solid"></div>
+                
+                {/* Footer Address and Facebook */}
+                {(shopConfig?.address || shopConfig?.facebookUrl) && (
+                  <div className="flex flex-row items-center justify-between text-[10px] font-bold text-black font-cairo py-1 mt-0">
+                    {shopConfig?.address && (
+                      <div className="flex items-center gap-1.5 justify-center flex-row-reverse text-center w-max">
+                         <MapPin size={12} className="text-gray-600" />
+                         <span>{shopConfig.address}</span>
+                      </div>
+                    )}
+
+                    {shopConfig?.facebookUrl && (
+                      <div className="flex items-center gap-1.5 justify-center flex-row-reverse text-center w-max">
+                         <Facebook size={12} className="text-blue-600" />
+                         <span dir="ltr">{shopConfig.facebookUrl}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <BankAccountsFooter shopConfig={shopConfig} currentOutput={currentOutput || { output_datetime: new Date() }} />
+              </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {selectedInvoice && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 sm:p-4 pointer-events-auto text-right" dir="rtl">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedInvoice(null)}></div>
+          <div className="relative bg-[#1a1a1a] p-4 sm:p-5 w-full max-w-6xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/5">
+              <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <Info size={18} className="text-orange-500" /> مراجعة الفاتورة
+              </h3>
+              <button onClick={() => setSelectedInvoice(null)} className="w-8 h-8 flex items-center justify-center bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl transition-all border border-red-500/20 group">
+                 <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3 flex-1 flex flex-col justify-between overflow-hidden">
+              {/* بيانات العميل في الأعلى */}
+              <div className="space-y-1 bg-black/20 p-2.5 rounded-xl border border-white/5 relative">
+                 <h4 className="text-xs font-bold text-gray-400 flex items-center gap-1.5 mb-1">
+                   <UserIcon size={14} /> العميل
+                 </h4>
+                 <div className="grid grid-cols-2 gap-2 text-xs font-bold text-white">
+                   <div>{selectedInvoice.customerName}</div>
+                   <div dir="ltr" className="text-left font-mono text-orange-500">#{selectedInvoice.invoiceNumber}</div>
+                 </div>
+              </div>
+
+              {/* جدول الأجهزة المعروض أفقيا */}
+              <div className="space-y-1 bg-black/20 p-2.5 rounded-xl border border-white/5 relative flex-1 flex flex-col overflow-hidden">
+                <h4 className="text-xs font-bold text-gray-400 flex items-center gap-1.5 mb-1 flex-shrink-0">
+                  <HardDrive size={14} /> الأجهزة جاهزة للخروج ({invoiceItems.length})
+                </h4>
+                <div className="overflow-auto w-full flex-1">
+                  <table className="w-full text-right border-collapse text-xs">
+                    <thead className="bg-[#111] text-gray-300 font-bold border-b border-white/10 whitespace-nowrap sticky top-0 z-10">
+                      <tr>
+                        <th className="px-2 py-1.5 text-center text-[10px] w-14">
+                          <div className="flex items-center justify-center gap-1">
+                            <span>م</span>
+                            <span className="text-gray-600">/</span>
+                            <input 
+                              type="checkbox"
+                              checked={invoiceItems.length > 0 && selectedItemIds.size === invoiceItems.length}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedItemIds(new Set(invoiceItems.map(i => i.id!)));
+                                } else {
+                                  setSelectedItemIds(new Set());
+                                }
+                              }}
+                              className="rounded border-white/10 bg-black/40 text-orange-600 focus:ring-orange-500 focus:ring-offset-[#1a1a1a] w-3 h-3 cursor-pointer"
+                            />
+                          </div>
+                        </th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">النوع/الجهاز</th>
+                        <th className="px-2 py-1.5 text-center text-[10px] w-12">العدد</th>
+                        <th className="px-2 py-1.5 text-center text-[10px] w-20">المبلغ</th>
+                        <th className="px-2 py-1.5 text-center text-[10px] w-24">اجمالي المبلغ</th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">التقرير</th>
+                        <th className="px-2 py-1.5 text-center text-[10px] w-24">نوع التقرير</th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">شكوى العميل</th>
+                        <th className="px-2 py-1.5 text-right text-[10px]">تفاصيل الاستلام</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-gray-300">
+                      {[...invoiceItems].sort((a, b) => {
+                        const getConditionRank = (item: any) => {
+                          const subStatus = getItemSubStatus(item);
+                          if (subStatus === 'ready') return 1;
+                          if (subStatus === 'intact') return 2;
+                          if (subStatus === 'unrepairable') return 3;
+                          if (subStatus === 'refused') return 4;
+                          return 5;
+                        };
+                        return getConditionRank(a) - getConditionRank(b);
+                      }).map((item, idx) => {
+                        const subStatus = getItemSubStatus(item);
+                        const isSelected = selectedItemIds.has(item.id!);
+                        
+                        const itemQty = Number(item.quantity || 1);
+                        const totalItemCost = Number(item.cost || 0);
+                        const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
+                        
+                        const getReportTypeArabic = (itemData: typeof item, statusStr: string) => {
+                          if (statusStr === 'intact') return 'تقرير الفحص';
+                          if (statusStr === 'unrepairable') {
+                            return itemData.source === 'inspection' ? 'تقرير الفحص' : 'تقرير الصيانة';
+                          }
+                          if (statusStr === 'ready') return 'تقرير الصيانة';
+                          if (statusStr === 'refused' || statusStr === 'cancelled') return 'تقرير رد العميل';
+                          return 'تقرير الصيانة';
+                        };
+
+                        const reportTypeArabic = getReportTypeArabic(item, subStatus);
+                        
+                        const reportText = (subStatus === 'unrepairable' && item.source === 'inspection') 
+                          ? (item.engineerReport || 'لا يوجد') 
+                          : (item.failureReason || item.engineerReport || 'لا يوجد');
+
+                        const reportTypeBadgeClass = 
+                          reportTypeArabic === 'تقرير الفحص' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                          reportTypeArabic === 'تقرير الصيانة' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                          'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+
+                        return (
+                          <tr 
+                            key={item.id} 
+                            onClick={() => handleToggleItem(item.id!)}
+                            className={`hover:bg-white/5 transition-colors cursor-pointer whitespace-nowrap ${
+                              isSelected ? 'bg-orange-500/5' : ''
+                            }`}
+                          >
+                            {/* 1. مسلسل / مربع اختيار */}
+                            <td className="px-2 py-1 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span className="font-mono text-gray-400 text-[10px]">{idx + 1}</span>
+                                <input 
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleItem(item.id!)}
+                                  className="rounded border-white/10 bg-black/40 text-orange-600 focus:ring-orange-500 focus:ring-offset-[#1a1a1a] w-3.5 h-3.5 cursor-pointer"
+                                />
+                              </div>
+                            </td>
+
+                            {/* 2. النوع/الجهاز */}
+                            <td className="px-2 py-1 text-right text-white font-bold text-[11px] whitespace-nowrap">
+                              {item.deviceType || '-'} {item.deviceName ? ` / ${item.deviceName}` : ''}
+                            </td>
+
+                            {/* 3. العدد */}
+                            <td className="px-2 py-1 text-center font-mono text-white text-[11px]">
+                              {itemQty}
+                            </td>
+
+                            {/* 4. المبلغ */}
+                            <td className="px-2 py-1 text-center font-mono text-white text-[11px]">
+                              {subStatus === 'ready' ? `${unitItemCost.toLocaleString('en-US')} ${selectedInvoice.currency || 'USD'}` : '-'}
+                            </td>
+
+                            {/* 5. اجمالي المبلغ */}
+                            <td className="px-2 py-1 text-center font-mono text-orange-400 font-bold text-[11px]">
+                              {subStatus === 'ready' ? `${totalItemCost.toLocaleString('en-US')} ${selectedInvoice.currency || 'USD'}` : '-'}
+                            </td>
+
+                            {/* 6. التقرير */}
+                            <td className="px-2 py-1 text-right text-[11px] text-gray-300 max-w-[120px] truncate" title={reportText}>
+                              {reportText}
+                            </td>
+
+                            {/* 7. نوع التقرير */}
+                            <td className="px-2 py-1 text-center">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${reportTypeBadgeClass}`}>
+                                {reportTypeArabic}
+                              </span>
+                            </td>
+
+                            {/* 8. شكوى العميل */}
+                            <td className="px-2 py-1 text-right text-[11px] text-gray-300 max-w-[120px] truncate" title={item.customerProblem || 'لا يوجد'}>
+                              {item.customerProblem || 'لا يوجد'}
+                            </td>
+
+                            {/* 9. تفاصيل الاستلام */}
+                            <td className="px-2 py-1 text-right text-[11px] text-gray-400 max-w-[120px] truncate" title={item.deviceNotes || 'لا يوجد'}>
+                              {item.deviceNotes || 'لا يوجد'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Interactive calculations block adjacent to exit action */}
+              <div className="pt-2 mt-2 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-3 flex-shrink-0">
+                {/* Financial panel on the right (RTL) */}
+                <div className="flex flex-wrap items-center gap-4 justify-between w-full md:w-auto md:justify-start">
+                  
+                  {/* 1. Output devices total cost (Subtotal) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">المجموع الفرعي</p>
+                    <p className="text-sm font-black font-mono text-gray-300 text-right w-full">
+                      {subtotal.toFixed(2)} <span className="text-xs text-gray-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                    </p>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                  {/* 1.5 Tax Amount (الضريبة) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-blue-400 uppercase font-black tracking-widest block mb-0.5">مبلغ الضريبة</p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        lang="en"
+                        value={exitTaxAmount || ''}
+                        onFocus={e => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                          const parts = val.split('.');
+                          if (parts.length > 2) return;
+                          let num = parseFloat(val);
+                          if (isNaN(num)) num = 0;
+                          console.log("exitTaxAmount changed", num);
+                          setExitTaxAmount(num);
+                        }}
+                        className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center text-blue-400 focus:border-blue-500"
+                        placeholder="0"
+                      />
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
+                        {selectedInvoice.currency || 'USD'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                  {/* 2. Discount Amount (مبلغ الخصم) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-amber-500 uppercase font-black tracking-widest block mb-0.5">مبلغ الخصم</p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        lang="en"
+                        value={exitDiscountAmount || ''}
+                        onFocus={e => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                          const parts = val.split('.');
+                          if (parts.length > 2) return;
+                          let num = parseFloat(val);
+                          if (isNaN(num)) num = 0;
+                          console.log("exitDiscountAmount changed", num);
+                          setExitDiscountAmount(num);
+                        }}
+                        className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center text-amber-400 focus:border-amber-500"
+                        placeholder="0"
+                      />
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
+                        {selectedInvoice.currency || 'USD'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                  {/* 2.5 Total Cost (الإجمالي النهائي) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-purple-400 uppercase font-black tracking-widest block mb-0.5">الإجمالي النهائي</p>
+                    <p className="text-sm font-black font-mono text-purple-300 text-right w-full">
+                      {total.toFixed(2)} <span className="text-xs text-purple-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                    </p>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                  {/* 3. Amount received / paid (المبلغ الواصل) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-emerald-400 uppercase font-black tracking-widest block mb-0.5">المبلغ الواصل</p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        lang="en"
+                        value={exitPaidAmount || ''}
+                        onFocus={e => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                          const parts = val.split('.');
+                          if (parts.length > 2) return;
+                          let num = parseFloat(val);
+                          if (isNaN(num)) num = 0;
+                          console.log("exitPaidAmount changed", num);
+                          setExitPaidAmount(num);
+                        }}
+                        className={`w-16 bg-black/40 border rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center ${
+                          exitPaidAmount > total ? "border-rose-500 text-rose-400 focus:border-rose-500 bg-rose-500/5" : "border-white/10 text-emerald-400 focus:border-emerald-500"
+                        }`}
+                        placeholder="0"
+                      />
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
+                        {selectedInvoice.currency || 'USD'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                  {/* 3.5 New Remaining Balance (المبلغ المتبقي) */}
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">المبلغ المتبقي</p>
+                    <p className={`text-sm font-black font-mono ${remainingCostForSelection > 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
+                      {remainingCostForSelection.toFixed(2)} <span className="text-xs text-gray-500 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* Action Button & Metadata */}
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto justify-end">
+                  <div className="text-right text-[10px] text-slate-500 leading-tight hidden lg:block">
+                    <div>الواصل سابقاً: <span className="font-mono text-gray-300 font-bold">{Number(selectedInvoice.amountPaid || 0).toFixed(2)}</span> {selectedInvoice.currency}</div>
+                    <div>إجمالي الفاتورة: <span className="font-mono text-gray-300 font-bold">{Number(selectedInvoice.totalCost || 0).toFixed(2)}</span> {selectedInvoice.currency}</div>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1.5 w-full md:w-auto mt-2 sm:mt-0">
+                    {exitPaidAmount > total && (
+                      <span className="text-[10px] text-rose-400 font-bold font-cairo text-right">
+                        ⚠️ مبلغ الواصل أكبر من الإجمالي المستحق!
+                      </span>
+                    )}
+                    <button 
+                      onClick={handleShowPreview}
+                      disabled={selectedItemIds.size === 0 || exitPaidAmount > total}
+                      className="w-full md:w-auto bg-orange-600 hover:bg-orange-700 text-white font-black px-6 py-2 rounded-xl transition-all shadow-lg shadow-orange-600/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 text-xs font-cairo"
+                    >
+                      <Save size={14} />
+                      <span>عرض الفاتورة للمراجعة</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Unified Header */}
+      <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-b border-white/10 bg-black/20 gap-4" dir="rtl">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {onBack && (
+            <button onClick={onBack} className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all">
+              <ArrowRight size={18} />
+            </button>
+          )}
+          <h1 className="text-lg font-black text-white m-0 p-0 flex items-center gap-2">
+            {t('entryExit.deviceExit', 'Device Exit')}
+          </h1>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          {/* Quick Settings Button */}
+          <div className="relative w-full sm:w-auto">
+            <button
+              onClick={() => setShowColumnSettings(!showColumnSettings)}
+              className="w-full sm:w-auto p-2.5 bg-[#1a1a1a] hover:bg-white/10 text-gray-400 hover:text-white rounded-2xl transition-all border border-white/5 flex items-center justify-center gap-1.5 text-xs font-bold whitespace-nowrap cursor-pointer"
+              title="تخصيص الأعمدة"
+            >
+              <SlidersHorizontal size={16} className={showColumnSettings ? 'text-orange-500' : ''} />
+              <span>تخصيص الأعمدة</span>
+            </button>
+            
+            {showColumnSettings && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowColumnSettings(false)} />
+                <div className="absolute left-0 mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-xl p-4 z-50 text-right space-y-3" dir="rtl">
+                  <div className="text-xs font-black text-orange-500 border-b border-white/5 pb-2 mb-2 flex items-center justify-between">
+                    <span>إظهار/إخفاء الأعمدة</span>
+                    <button 
+                      onClick={() => setVisibleColumns({
+                        invoiceNumber: true,
+                        customerName: true,
+                        totalDevices: true,
+                        exitReadyCount: true,
+                        unrepairableCount: true,
+                        intactCount: true,
+                        refusedCount: true,
+                        readyCount: true,
+                      })}
+                      className="text-[10px] text-gray-400 hover:text-white underline cursor-pointer"
+                    >
+                      إعادة تعيين
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.invoiceNumber} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, invoiceNumber: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>رقم الفاتورة</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.customerName} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, customerName: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>العميل</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.totalDevices} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, totalDevices: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>أجهزة الفاتورة</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.exitReadyCount} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, exitReadyCount: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>المعنية بالإخراج</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.unrepairableCount} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, unrepairableCount: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>لا يصلح</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.intactCount} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, intactCount: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>سليم</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.refusedCount} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, refusedCount: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>لم يوافق</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={visibleColumns.readyCount} 
+                        onChange={e => setVisibleColumns(prev => ({...prev, readyCount: e.target.checked}))}
+                        className="rounded border-white/10 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span>جاهز</span>
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="w-full sm:w-80 font-bold">
+            <CustomerAutocomplete
+              customers={customers}
+              onSelect={(c) => setSearch(c.name)}
+              placeholder={t('common.search', 'بحث...')}
+              initialValue={search}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full bg-[#1a1a1a] rounded-none border-b border-white/5 overflow-hidden m-0 p-0">
+        <div className="w-full overflow-x-auto lg:overflow-x-visible">
+          <table className="w-full text-right border-collapse text-sm">
+            <thead className="bg-black/40 text-gray-400 text-xs tracking-widest font-black uppercase border-b border-white/5">
+              <tr className="text-[10px] sm:text-xs">
+                {visibleColumns.invoiceNumber && <th className="px-2 sm:px-4 py-4 text-right">رقم الفاتورة</th>}
+                {visibleColumns.customerName && <th className="px-2 sm:px-4 py-4 text-right">العميل</th>}
+                {visibleColumns.totalDevices && <th className="px-1 sm:px-3 py-4 text-center">أجهزة الفاتورة</th>}
+                {visibleColumns.exitReadyCount && <th className="px-1 sm:px-3 py-4 text-center text-orange-500 font-bold">المعنية بالإخراج</th>}
+                {visibleColumns.unrepairableCount && <th className="px-1 sm:px-3 py-4 text-center text-red-500/80">لا يصلح</th>}
+                {visibleColumns.intactCount && <th className="px-1 sm:px-3 py-4 text-center text-emerald-500/80">سليم</th>}
+                {visibleColumns.refusedCount && <th className="px-1 sm:px-3 py-4 text-center text-red-400/80">لم يوافق</th>}
+                {visibleColumns.readyCount && <th className="px-1 sm:px-3 py-4 text-center text-orange-500/80">جاهز</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 text-gray-300">
+              {paginatedInvoices.map(invoice => {
+                const invItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber);
+                const totalDevices = invItems.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0);
+                
+                // Devices in the ready states (still inside DeviceExit waiting to be delivered)
+                const exitReadyItems = invItems.filter(i => EXIT_READY_STATUSES.includes(i.status));
+                const exitReadyCount = exitReadyItems.reduce((acc, i) => acc + (Number(i.quantity) || 0), 0);
+                
+                let unrepairableCount = 0;
+                let intactCount = 0;
+                let refusedCount = 0;
+                let readyCount = 0;
+
+                exitReadyItems.forEach(item => {
+                  const sub = getItemSubStatus(item);
+                  const qty = Number(item.quantity) || 0;
+                  if (sub === 'unrepairable') unrepairableCount += qty;
+                  else if (sub === 'intact') intactCount += qty;
+                  else if (sub === 'refused') refusedCount += qty;
+                  else if (sub === 'ready') readyCount += qty;
+                });
+
+                return (
+                  <tr key={invoice.id} className="hover:bg-white/5 transition-colors cursor-pointer group text-[11px] sm:text-xs md:text-sm" onClick={() => openInvoice(invoice)}>
+                    {visibleColumns.invoiceNumber && <td className="px-2 sm:px-4 py-3 font-mono font-bold text-orange-500">{invoice.invoiceNumber}</td>}
+                    {visibleColumns.customerName && <td className="px-2 sm:px-4 py-3 font-bold text-white max-w-[100px] sm:max-w-[200px] truncate">{invoice.customerName}</td>}
+                    {visibleColumns.totalDevices && <td className="px-1 sm:px-3 py-3 font-mono text-center font-bold text-gray-500">{totalDevices}</td>}
+                    {visibleColumns.exitReadyCount && <td className="px-1 sm:px-3 py-3 font-mono text-center font-bold text-orange-400">{exitReadyCount}</td>}
+                    {visibleColumns.unrepairableCount && <td className="px-1 sm:px-3 py-3 font-mono text-center text-red-500 font-bold">{unrepairableCount > 0 ? unrepairableCount : '-'}</td>}
+                    {visibleColumns.intactCount && <td className="px-1 sm:px-3 py-3 font-mono text-center text-emerald-500 font-bold">{intactCount > 0 ? intactCount : '-'}</td>}
+                    {visibleColumns.refusedCount && <td className="px-1 sm:px-3 py-3 font-mono text-center text-red-400 font-bold">{refusedCount > 0 ? refusedCount : '-'}</td>}
+                    {visibleColumns.readyCount && <td className="px-1 sm:px-3 py-3 font-mono text-center text-orange-500 font-bold">{readyCount > 0 ? readyCount : '-'}</td>}
+                  </tr>
+                );
+              })}
+              {readyInvoices.length === 0 && (
+                <tr>
+                   <td colSpan={Object.values(visibleColumns).filter(Boolean).length} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center opacity-50 space-y-4">
+                         <div className="p-4 bg-white/5 rounded-full border border-white/10">
+                           <Info size={32} />
+                         </div>
+                         <p className="text-sm font-bold text-gray-400">لا توجد أجهزة جاهزة حالياً</p>
+                      </div>
+                   </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination controls */}
+        {readyInvoices.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-black/20 border-t border-white/5 gap-4" dir="rtl">
+            <div className="text-xs text-gray-400 font-bold">
+              عرض <span className="text-white font-mono">{((safeCurrentPage - 1) * itemsPerPage) + 1}</span> إلى <span className="text-white font-mono">{Math.min(safeCurrentPage * itemsPerPage, readyInvoices.length)}</span> من أصل <span className="text-white font-mono">{readyInvoices.length}</span> فاتورة جاهزة للخروج
+            </div>
+            
+            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+              {/* Prev page button */}
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={safeCurrentPage === 1}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all border border-white/5 cursor-pointer"
+                title="الصفحة السابقة"
+              >
+                <ChevronRight size={16} />
+              </button>
+              
+              {/* Page numbers */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                const isCurrent = page === safeCurrentPage;
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer ${
+                      isCurrent 
+                        ? 'bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-600/20' 
+                        : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+
+              {/* Next page button */}
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={safeCurrentPage === totalPages}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all border border-white/5 cursor-pointer"
+                title="الصفحة التالية"
+              >
+                <ChevronLeft size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
