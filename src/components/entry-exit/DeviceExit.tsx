@@ -83,6 +83,23 @@ const getStatusArabic = (status: string) => {
   }
 };
 
+function parseEngineerReport(reportStr: string) {
+  const s = reportStr || '';
+  const idx = s.indexOf(' | ');
+  if (idx !== -1) {
+    const technical = s.substring(0, idx);
+    const outcome = s.substring(idx + 3);
+    return {
+      technical: technical.trim(),
+      outcome: outcome.trim()
+    };
+  }
+  return {
+    technical: s.trim(),
+    outcome: ''
+  };
+}
+
 export default function DeviceExit({ user, onBack }: { user: User, onBack: () => void }) {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -715,6 +732,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       const totalItemCost = Number(item.cost || 0);
                       const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
                       const subStatusArabic = getStatusArabic(getItemSubStatus(item));
+                      const { outcome } = parseEngineerReport(item.engineerReport || '');
                       
                       return (
                         <tr key={item.id} className="even:bg-gray-50/50">
@@ -723,7 +741,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                             {item.deviceType || '-'} {item.deviceName ? `- ${item.deviceName}` : ''}
                           </td>
                           <td className="px-3 py-3 text-gray-900 font-bold leading-relaxed border-l border-gray-400 whitespace-nowrap">
-                            {subStatusArabic}
+                            {subStatusArabic}{outcome ? ` - ${outcome}` : ''}
                           </td>
                           <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
                             {unitItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>

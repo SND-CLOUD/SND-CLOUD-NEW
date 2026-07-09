@@ -392,7 +392,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
   const getInvoiceActualCost = (itemsList: any[]) => {
     return itemsList.reduce((sum, item) => {
       // Exclude items in pending statuses 
-      if (['10', '20', '25', '30', '35', '40', 'new', 'in_progress', 'awaiting_parts', 'awaiting_approval', 'repairing'].includes(item.status)) {
+      if (['10', '20', '21', '22', '25', '30', '35', '40', 'new', 'in_progress', 'awaiting_parts', 'awaiting_approval', 'repairing'].includes(item.status)) {
         return sum;
       }
       
@@ -748,6 +748,8 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
       case '20':
       case 'inspected':
       case 'testing': return 'قيد الفحص';
+      case '21': return 'فحص مرحلي 1 (المهندس)';
+      case '22': return 'فحص مرحلي 2 (المشرف)';
       case '30':
       case 'awaiting_approval': return 'إنتظار موافقة العميل';
       case 'approved': return 'تمت موافقة العميل';
@@ -776,6 +778,8 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
       case '20':
       case 'inspected':
       case 'testing': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+      case '21': return 'bg-amber-600/15 text-amber-500 border-amber-500/20';
+      case '22': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
       case '30':
       case 'awaiting_approval': return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
       case 'approved': return 'bg-teal-500/10 text-teal-400 border-teal-500/20';

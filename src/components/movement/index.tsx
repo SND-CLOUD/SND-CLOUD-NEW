@@ -38,8 +38,8 @@ export default function DeviceMovement({
         const status = item.status;
         const qty = Number(item.quantity) || 1;
 
-        // 1. Inspection: '10', 'new', '20'
-        if (status === '10' || status === 'new' || status === '20') {
+        // 1. Inspection: '10', 'new', '20', '21', '22', 'testing', 'inspected'
+        if (['10', 'new', '20', '21', '22', 'testing', 'inspected'].includes(status)) {
           insCount += qty;
         }
         // 2. Approval & Parts: '30', 'awaiting_approval', '35', 'awaiting_parts'

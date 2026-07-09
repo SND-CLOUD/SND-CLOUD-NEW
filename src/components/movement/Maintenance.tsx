@@ -724,7 +724,21 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
                           {dbItem?.deviceType || '-'} - {dbItem?.deviceName || '-'}
                         </td>
                         <td className="py-3 px-3 border-l border-black text-right text-xs text-gray-700 min-w-[120px]">{dbItem?.customerProblem || '-'}</td>
-                        <td className="py-3 px-3 border-l border-black text-right text-xs text-gray-700 min-w-[120px]">{dbItem?.engineerReport || '-'}</td>
+                        <td className="py-3 px-3 border-l border-black text-right text-xs text-gray-700 min-w-[120px]">
+                          {(() => {
+                            const val = dbItem?.engineerReport || '';
+                            const splitIdx = val.indexOf(' | ');
+                            if (splitIdx !== -1) {
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  <span>{val.substring(0, splitIdx).trim()}</span>
+                                  <span className="text-[10px] text-purple-600 font-black">النتيجة: {val.substring(splitIdx + 3).trim()}</span>
+                                </div>
+                              );
+                            }
+                            return val || '-';
+                          })()}
+                        </td>
                         <td className={`py-3 px-3 border-l border-black text-sm text-right font-black whitespace-nowrap ${
                           item.outcome === 'repaired' ? 'text-emerald-600' :
                           item.outcome === 'failed' ? 'text-rose-600' :
@@ -990,7 +1004,19 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
                       <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
                         <label className="text-xs text-gray-400 font-bold whitespace-nowrap sm:w-24 sm:shrink-0 pt-1">تقرير الفحص</label>
                         <div className="w-full sm:flex-1 bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-xs font-medium text-orange-500 break-words text-right">
-                          {selectedItem.engineerReport || 'لا يوجد'}
+                          {(() => {
+                            const val = selectedItem.engineerReport || '';
+                            const splitIdx = val.indexOf(' | ');
+                            if (splitIdx !== -1) {
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <div><span className="text-gray-400">التقرير الفني: </span>{val.substring(0, splitIdx).trim()}</div>
+                                  <div className="text-purple-400 font-bold"><span className="text-gray-400">نتيجة الصيانة: </span>{val.substring(splitIdx + 3).trim()}</div>
+                                </div>
+                              );
+                            }
+                            return val || 'لا يوجد';
+                          })()}
                         </div>
                       </div>
                     </div>

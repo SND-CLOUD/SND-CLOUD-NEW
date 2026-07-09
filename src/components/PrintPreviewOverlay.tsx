@@ -9,6 +9,21 @@ import ReportActions, { WhatsAppIcon } from './ReportActions';
 
 type PrintTemplateType = 'entry' | 'exit' | 'inspection' | 'quotation' | 'assignment' | 'maintenance';
 
+function parseEngineerReport(reportStr: string) {
+  const s = reportStr || '';
+  const idx = s.indexOf(' | ');
+  if (idx !== -1) {
+    return {
+      technical: s.substring(0, idx).trim(),
+      outcome: s.substring(idx + 3).trim()
+    };
+  }
+  return {
+    technical: s.trim(),
+    outcome: ''
+  };
+}
+
 export default function PrintPreviewOverlay({ 
   type, 
   data, 
@@ -984,7 +999,7 @@ export default function PrintPreviewOverlay({
 
   const getStatusText = (status: string) => {
     const map: any = {
-      '10': 'مستلم', '20': 'قيد الفحص', '30': 'بانتظار الموافقة',
+      '10': 'مستلم', '20': 'قيد الفحص', '21': 'فحص مرحلي - مرحلة أولى', '22': 'فحص مرحلي - مرحلة ثانية', '30': 'بانتظار الموافقة',
       '40': 'قيد الصيانة', '45': 'لا يمكن إصلاحه', '50': 'جاهز للتسليم', '55': 'لا يمكن إصلاحه',
       '60': 'تم التسليم', '70': 'رفض الإصلاح'
     };
@@ -1308,15 +1323,25 @@ export default function PrintPreviewOverlay({
                           if (statusLabel === 'لم يوافق') statusColor = 'text-gray-600';
 
                           return (
-                            <tr key={idx} className="h-8 hover:bg-gray-50/50">
+                            <tr key={idx} className="hover:bg-gray-50/50">
                               <td className="py-1 px-2 border-l border-black text-center font-mono whitespace-nowrap overflow-hidden text-ellipsis truncate">{idx + 1}</td>
                               <td className="py-1 px-2 border-l border-black text-right whitespace-nowrap overflow-hidden text-ellipsis truncate">
                                 <div className="truncate max-w-[180px]" dir="rtl" title={`${it.deviceType} ${it.deviceName ? `- ${it.deviceName}` : ''}`}>
                                   {it.deviceType} <span className="text-gray-500 text-[10px] font-normal">- {it.deviceName}</span>
                                 </div>
                               </td>
-                              <td className={`py-1 px-2 border-l border-black text-center font-black whitespace-nowrap overflow-hidden text-ellipsis truncate ${statusColor}`}>
-                                {statusLabel}
+                              <td className={`py-1 px-2 border-l border-black text-center font-black ${statusColor}`}>
+                                <div className="flex flex-col items-center justify-center leading-normal">
+                                  {(() => {
+                                    const { outcome } = parseEngineerReport(it.technicalNotes || it.engineerReport || '');
+                                    return (
+                                      <span>
+                                        {statusLabel}
+                                        {outcome ? ` - ${outcome}` : ''}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-center font-mono whitespace-nowrap overflow-hidden text-ellipsis truncate" dir="ltr">
                                 {unitCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
@@ -1406,6 +1431,7 @@ export default function PrintPreviewOverlay({
             })()}
 
             {type === 'invoice' && templateType === 'inspection' && (() => {
+              const isPhase1 = invoice?.status === '21';
               const getItemStatus = (it: any) => {
                 const statusVal = String(it.status || '').trim();
                 if (['55', '45', '70'].includes(statusVal) || it.subStatus === 'unrepairable' || (it.engineerReport || '').includes('لا يصلح') || (it.technicalNotes || '').includes('لا يصلح')) {
@@ -1448,9 +1474,9 @@ export default function PrintPreviewOverlay({
                           <th className="py-1.5 px-2 border-l border-black text-center w-10 font-bold">م</th>
                           <th className="py-1.5 px-2 border-l border-black text-right w-44 font-bold">النوع / الجهاز</th>
                           <th className="py-1.5 px-2 border-l border-black text-right min-w-[120px] font-bold">الحالة - تقرير الفحص</th>
-                          <th className="py-1.5 px-2 border-l border-black text-center w-32 font-bold">تكلفة صيانة الجهاز</th>
+                          {!isPhase1 && <th className="py-1.5 px-2 border-l border-black text-center w-32 font-bold">تكلفة صيانة الجهاز</th>}
                           <th className="py-1.5 px-2 border-l border-black text-center w-16 font-bold">العدد</th>
-                          <th className="py-1.5 px-2 text-center w-28 font-bold">اجمالي التكلفة</th>
+                          {!isPhase1 && <th className="py-1.5 px-2 text-center w-28 font-bold">اجمالي التكلفة</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-black">
@@ -1469,34 +1495,49 @@ export default function PrintPreviewOverlay({
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
-                                <div className="truncate max-w-[280px] whitespace-nowrap overflow-hidden text-ellipsis text-emerald-800 animate-pulse-subtle" dir="rtl">
-                                  {statusLabel} - {it.technicalNotes || it.engineerReport || '-'}
+                                <div className="max-w-[280px] text-emerald-800 animate-pulse-subtle leading-normal flex flex-col justify-center" dir="rtl">
+                                  {(() => {
+                                    const reportVal = it.technicalNotes || it.engineerReport || '';
+                                    const { technical, outcome } = parseEngineerReport(reportVal);
+                                    return (
+                                      <>
+                                        <span>{statusLabel} - {technical || '-'}</span>
+                                        {outcome && <span className="text-[10px] font-bold text-gray-500">{outcome}</span>}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </td>
-                              <td className="py-1 px-2 border-l border-black text-center font-mono" dir="ltr">
-                                {unitCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-                              </td>
+                              {!isPhase1 && (
+                                <td className="py-1 px-2 border-l border-black text-center font-mono" dir="ltr">
+                                  {unitCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                </td>
+                              )}
                               <td className="py-1 px-2 border-l border-black text-center font-mono" dir="ltr">
                                 {qty}
                               </td>
-                              <td className="py-1 px-2 text-center font-mono" dir="ltr">
-                                {totalCost.toLocaleString('en-US')}
-                              </td>
+                              {!isPhase1 && (
+                                <td className="py-1 px-2 text-center font-mono" dir="ltr">
+                                  {totalCost.toLocaleString('en-US')}
+                                </td>
+                              )}
                             </tr>
                           );
                         })}
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-100 border-t-2 border-black font-black text-sm h-9">
-                          <td colSpan={4} className="py-1.5 px-4 border-l border-black text-left font-black">
+                          <td colSpan={isPhase1 ? 3 : 4} className="py-1.5 px-4 border-l border-black text-left font-black">
                             الاجمالي
                           </td>
                           <td className="py-1.5 px-2 border-l border-black text-center font-mono font-black" dir="ltr">
                             {sortedItems.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0)}
                           </td>
-                          <td className="py-1.5 px-2 text-center font-mono font-black" dir="ltr">
-                            {sortedItems.reduce((sum: number, it: any) => sum + Number(it.cost || 0), 0).toLocaleString('en-US')}
-                          </td>
+                          {!isPhase1 && (
+                            <td className="py-1.5 px-2 text-center font-mono font-black" dir="ltr">
+                              {sortedItems.reduce((sum: number, it: any) => sum + Number(it.cost || 0), 0).toLocaleString('en-US')}
+                            </td>
+                          )}
                         </tr>
                       </tfoot>
                     </table>
@@ -1600,8 +1641,17 @@ export default function PrintPreviewOverlay({
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
-                                <div className="truncate max-w-[280px] whitespace-nowrap overflow-hidden text-ellipsis text-emerald-800 animate-pulse-subtle" dir="rtl">
-                                  {statusLabel} - {it.technicalNotes || it.engineerReport || '-'}
+                                <div className="max-w-[280px] text-emerald-800 animate-pulse-subtle leading-normal flex flex-col justify-center" dir="rtl">
+                                  {(() => {
+                                    const reportVal = it.technicalNotes || it.engineerReport || '';
+                                    const { technical, outcome } = parseEngineerReport(reportVal);
+                                    return (
+                                      <>
+                                        <span>{statusLabel} - {technical || '-'}</span>
+                                        {outcome && <span className="text-[10px] font-bold text-gray-500">{outcome}</span>}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-center font-mono" dir="ltr">
@@ -1770,10 +1820,12 @@ export default function PrintPreviewOverlay({
                         {items.map((it: any, idx: number) => {
                           const qty = Number(it.quantity || 1);
                           const statusInfo = getRowStatus(it);
-                          const maintenanceReport = it.technicalNotes || it.engineerReport || '-';
+                          const reportVal = it.technicalNotes || it.engineerReport || '';
+                          const parsed = parseEngineerReport(reportVal);
+                          const maintenanceReport = parsed.outcome ? `${parsed.technical} (${parsed.outcome})` : (reportVal || '-');
 
                           return (
-                            <tr key={idx} className="h-8 hover:bg-gray-50/50">
+                            <tr key={idx} className="hover:bg-gray-50/50">
                               <td className="py-1 px-2 border-l border-black text-center font-mono">{idx + 1}</td>
                               <td className="py-1 px-2 border-l border-black text-right">
                                 <div className="truncate max-w-[170px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${it.deviceType} ${it.deviceName ? `- ${it.deviceName}` : ''}`} dir="rtl">
@@ -1786,13 +1838,15 @@ export default function PrintPreviewOverlay({
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
-                                <div className="truncate max-w-[150px] whitespace-nowrap overflow-hidden text-ellipsis" title={it.engineerReport || '-'} dir="rtl">
-                                  {it.engineerReport || '-'}
+                                <div className="max-w-[150px] leading-normal flex flex-col justify-center" dir="rtl">
+                                  <span>{parsed.technical || '-'}</span>
+                                  {parsed.outcome && <span className="text-[10px] text-gray-500 font-bold">{parsed.outcome}</span>}
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
-                                <div className="truncate max-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${statusInfo.label} - ${maintenanceReport}`} dir="rtl">
-                                  <span className={statusInfo.color}>{statusInfo.label}</span> - {maintenanceReport}
+                                <div className="max-w-[200px] leading-normal flex flex-col justify-center" dir="rtl">
+                                  <div><span className={statusInfo.color}>{statusInfo.label}</span> - {parsed.technical || '-'}</div>
+                                  {parsed.outcome && <span className="text-[10px] text-gray-500 font-bold">{parsed.outcome}</span>}
                                 </div>
                               </td>
                               <td className="py-1 px-2 text-center font-mono" dir="ltr">

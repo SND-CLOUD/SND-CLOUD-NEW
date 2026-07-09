@@ -16,6 +16,21 @@ const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+function parseEngineerReport(reportStr: string) {
+  const s = reportStr || '';
+  const idx = s.indexOf(' | ');
+  if (idx !== -1) {
+    return {
+      technical: s.substring(0, idx).trim(),
+      outcome: s.substring(idx + 3).trim()
+    };
+  }
+  return {
+    technical: s.trim(),
+    outcome: ''
+  };
+}
+
 export default function ApprovalAndParts({ user, onBack, initialInvoice }: { user: User, onBack: () => void, initialInvoice?: Invoice | null }) {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -1089,8 +1104,16 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
                               <td className="px-2 py-1 font-bold text-gray-900 border-l border-gray-400 w-[25%] max-w-[190px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${item.deviceType} ${item.deviceName ? `- ${item.deviceName}` : ''}`}>
                                 {item.deviceType} {item.deviceName ? `- ${item.deviceName}` : ''}
                               </td>
-                              <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[40%] max-w-[310px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${statusLabel} - ${item.engineerReport || item.faultType || 'قيد المعاينة والمراجعة'}`}>
-                                <span className={statusLabel === 'سليم' ? 'text-emerald-700 font-bold' : statusLabel === 'لا يصلح' ? 'text-rose-700 font-bold' : 'text-amber-700 font-bold'}>{statusLabel}</span> - {item.engineerReport || item.faultType || 'قيد المعاينة والمراجعة'}
+                              <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[40%] max-w-[310px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${statusLabel} - ${(() => {
+                                const reportVal = item.engineerReport || '';
+                                const parsed = parseEngineerReport(reportVal);
+                                return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || item.faultType || 'قيد المعاينة والمراجعة');
+                              })()}`}>
+                                <span className={statusLabel === 'سليم' ? 'text-emerald-700 font-bold' : statusLabel === 'لا يصلح' ? 'text-rose-700 font-bold' : 'text-amber-700 font-bold'}>{statusLabel}</span> - {(() => {
+                                  const reportVal = item.engineerReport || '';
+                                  const parsed = parseEngineerReport(reportVal);
+                                  return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || item.faultType || 'قيد المعاينة والمراجعة');
+                                })()}
                               </td>
                               <td className="px-2 py-1 text-center font-mono text-gray-900 border-l border-gray-400 w-[12%]">
                                 {unitItemCost.toLocaleString('en-US')}
@@ -1391,8 +1414,16 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
                                 <td className="px-2 py-1 font-bold text-gray-900 border-l border-gray-400 w-[25%] max-w-[190px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${it.deviceType} ${it.deviceName ? `- ${it.deviceName}` : ''}`}>
                                   {it.deviceType} {it.deviceName ? `- ${it.deviceName}` : ''}
                                 </td>
-                                <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[35%] max-w-[270px] whitespace-nowrap overflow-hidden text-ellipsis" title={it.engineerReport || 'لا يوجد تقرير'}>
-                                  {it.engineerReport || 'لا يوجد تقرير'}
+                                <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[35%] max-w-[270px] whitespace-nowrap overflow-hidden text-ellipsis" title={(() => {
+                                  const reportVal = it.engineerReport || '';
+                                  const parsed = parseEngineerReport(reportVal);
+                                  return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || 'لا يوجد تقرير');
+                                })()}>
+                                  {(() => {
+                                    const reportVal = it.engineerReport || '';
+                                    const parsed = parseEngineerReport(reportVal);
+                                    return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || 'لا يوجد تقرير');
+                                  })()}
                                 </td>
                                 <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[25%] max-w-[190px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${action.outcome === 'approved' ? 'موافقة' : action.outcome === 'waiting_parts' ? 'انتظار قطع' : 'رفض'} - ${action.reason || '-'}`}>
                                   <span className="font-bold text-gray-900 ml-1">

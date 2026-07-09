@@ -20,6 +20,23 @@ const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+function parseEngineerReport(reportStr: string, isEditing: boolean = false) {
+  const s = reportStr || '';
+  const idx = s.indexOf(' | ');
+  if (idx !== -1) {
+    const technical = s.substring(0, idx);
+    const outcome = s.substring(idx + 3);
+    return {
+      technical: isEditing ? technical : technical.trim(),
+      outcome: isEditing ? outcome : outcome.trim()
+    };
+  }
+  return {
+    technical: isEditing ? s : s.trim(),
+    outcome: ''
+  };
+}
+
 export default function Inspection({ user, onBack, initialInvoice }: { user: User, onBack: () => void, initialInvoice?: Invoice | null }) {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions(user, 'inventory');
@@ -58,8 +75,9 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
   const [currentOutput, setCurrentOutput] = useState<any>(null);
 
   // Double Purpose tabs
-  const [subTab, setSubTab] = useState<'new_devices' | 'under_inspection'>('new_devices');
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, 'action1' | 'action2'>>({});
+  const [subTab, setSubTab] = useState<'new_devices' | 'under_inspection' | 'phased_inspection'>('new_devices');
+  const [phasedStage, setPhasedStage] = useState<'phase1' | 'phase2'>('phase1');
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, 'action1' | 'action2' | 'action3'>>({});
   const [selectedInvoiceForCancel, setSelectedInvoiceForCancel] = useState<Invoice | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelNotes, setCancelNotes] = useState('');
@@ -79,6 +97,14 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         setSubTab('new_devices');
       } else if (initialInvoice.status === '20') {
         setSubTab('under_inspection');
+        openInvoice(initialInvoice);
+      } else if (initialInvoice.status === '21') {
+        setSubTab('phased_inspection');
+        setPhasedStage('phase1');
+        openInvoice(initialInvoice);
+      } else if (initialInvoice.status === '22') {
+        setSubTab('phased_inspection');
+        setPhasedStage('phase2');
         openInvoice(initialInvoice);
       }
     }
@@ -109,11 +135,15 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [subTab, search]);
+  }, [subTab, phasedStage, search]);
 
   const countNewDevices = items.filter(i => i.status === '10' || i.status === 'new').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  const countInspectionDevices = items.filter(i => i.status === '20').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const countPhase1Devices = items.filter(i => i.status === '21').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const countPhase2Devices = items.filter(i => i.status === '22').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const countPhasedDevices = countPhase1Devices + countPhase2Devices;
+
+  const countInspectionDevices = items.filter(i => i.status === '20' || i.status === 'testing' || i.status === 'inspected').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) + countPhasedDevices;
 
   const newInvoicesFiltered = invoices.filter(inv => {
     return items.some(item => item.invoiceNumber === inv.invoiceNumber && (item.status === '10' || item.status === 'new') && item.quantity > 0);
@@ -129,7 +159,26 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     (inv.invoiceNumber || '').includes(search)
   ).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
 
-  const activeInvoices = subTab === 'new_devices' ? newInvoicesFiltered : pendingInvoicesFiltered;
+  const phase1InvoicesFiltered = invoices.filter(inv => {
+    return items.some(item => item.invoiceNumber === inv.invoiceNumber && item.status === '21' && item.quantity > 0);
+  }).filter(inv => 
+    (inv.customerName || '').toLowerCase().includes(search.toLowerCase()) || 
+    (inv.invoiceNumber || '').includes(search)
+  ).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
+
+  const phase2InvoicesFiltered = invoices.filter(inv => {
+    return items.some(item => item.invoiceNumber === inv.invoiceNumber && item.status === '22' && item.quantity > 0);
+  }).filter(inv => 
+    (inv.customerName || '').toLowerCase().includes(search.toLowerCase()) || 
+    (inv.invoiceNumber || '').includes(search)
+  ).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
+
+  const activeInvoices = subTab === 'new_devices' 
+    ? newInvoicesFiltered 
+    : subTab === 'under_inspection' 
+    ? pendingInvoicesFiltered 
+    : (phasedStage === 'phase1' ? phase1InvoicesFiltered : phase2InvoicesFiltered);
+
   const totalPages = Math.max(1, Math.ceil(activeInvoices.length / itemsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const currentInvoices = activeInvoices.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
@@ -140,6 +189,10 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
 
   const getInspectionDevicesCount = (invoiceNumber: string) => {
     return items.filter(item => item.invoiceNumber === invoiceNumber && item.status === '20').reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+  };
+
+  const countPhasedInvoicesCount = (invoiceNumber: string, statusToCheck: string) => {
+    return items.filter(item => item.invoiceNumber === invoiceNumber && item.status === statusToCheck).reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
   };
 
   const handleExecuteAction = async (invoice: Invoice) => {
@@ -177,8 +230,39 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         console.error(err);
         alert('حدث خطأ أثناء محاولة تسجيل دخول فحص.');
       }
+    } else if (subTab === 'under_inspection') {
+      if (choice === 'action3') {
+        // Transition from '20' to '21' (Phased Inspection Phase 1)
+        try {
+          const batch = writeBatch(db);
+          const invRef = doc(db, 'invoices', invoice.id!);
+          batch.update(invRef, {
+            status: '21',
+            updatedAt: serverTimestamp()
+          });
+
+          const invoiceItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && i.status === '20');
+          invoiceItems.forEach(item => {
+            batch.update(doc(db, 'invoice_items', item.id!), {
+              status: '21',
+              updatedAt: serverTimestamp()
+            });
+          });
+
+          await batch.commit();
+          showToast(`تم تحويل الفاتورة #${invoice.invoiceNumber} بنجاح إلى الفحص المرحلي.`);
+          setSubTab('phased_inspection');
+          setPhasedStage('phase1');
+        } catch (err) {
+          console.error(err);
+          alert('حدث خطأ أثناء محاولة تسجيل تحويل للفحص المرحلي.');
+        }
+      } else {
+        // Diagnose step for status '20'
+        openInvoice(invoice);
+      }
     } else {
-      // Diagnose step for status '20'
+      // Diagnose step for status '21' or '22'
       openInvoice(invoice);
     }
   };
@@ -239,41 +323,159 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     return c ? (c.name || c.companyName) : '---';
   };
 
-  const [currentActionItem, setCurrentActionItem] = useState<{ id: string, count: number | '', report: string, unitCost: number, cost: number, decision: 'repairing' | 'intact' | 'unrepairable' }>({ id: '', count: 1, report: '', unitCost: 0, cost: 0, decision: 'repairing' });
+  const [currentActionItem, setCurrentActionItem] = useState<{
+    id: string,
+    count: number | '',
+    report: string,
+    technical: string,
+    outcome: string,
+    unitCost: number,
+    cost: number,
+    decision: 'repairing' | 'intact' | 'unrepairable'
+  }>({
+    id: '',
+    count: 1,
+    report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+    technical: 'الجهاز بحاجة إلى صيانة',
+    outcome: 'تشغيل كامل للجهاز',
+    unitCost: 0,
+    cost: 0,
+    decision: 'repairing'
+  });
+
+  const setSyncedCurrentActionItem = (item: any) => {
+    const reportVal = item.report || '';
+    const parsed = parseEngineerReport(reportVal, true);
+    
+    const technical = item.technical !== undefined ? item.technical : parsed.technical;
+    const outcome = item.outcome !== undefined ? item.outcome : (parsed.outcome || (item.decision === 'repairing' ? 'تشغيل كامل للجهاز' : ''));
+    const finalReport = item.report !== undefined ? item.report : (technical + " | " + outcome);
+
+    setCurrentActionItem({
+      ...item,
+      report: finalReport,
+      technical,
+      outcome
+    });
+  };
+
+  const getLatestItemData = (itemId: string, currentActionList: any[]) => {
+    // First, check if there is an item in the current temporary actions list
+    const actionItem = currentActionList.find(a => a.id === itemId);
+    if (actionItem) {
+      return {
+        decision: actionItem.decision,
+        report: actionItem.report,
+        unitCost: actionItem.unitCost,
+        cost: actionItem.cost
+      };
+    }
+    // Second, check the original invoiceItems list
+    const originalItem = invoiceItems.find(i => i.id === itemId);
+    if (originalItem) {
+      const initialDecision = (originalItem.subStatus === 'intact' || originalItem.subStatus === 'unrepairable' || originalItem.subStatus === 'repairing') 
+        ? originalItem.subStatus 
+        : 'repairing';
+      return {
+        decision: initialDecision,
+        report: originalItem.engineerReport || (initialDecision === 'repairing' ? 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز' : initialDecision === 'intact' ? 'سليم' : 'لايصلح'),
+        unitCost: originalItem.cost || 0,
+        cost: originalItem.cost || 0
+      };
+    }
+    return null;
+  };
   const [editingActionIndex, setEditingActionIndex] = useState<number | null>(null);
 
   const openInvoice = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
-    const avItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && i.status === '20');
+    const targetStatus = invoice.status === '21' ? '21' : invoice.status === '22' ? '22' : '20';
+    const avItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && i.status === targetStatus);
     setInvoiceItems(avItems);
     
-    // Initialize one entry form with the total available quantity
+    setActionItems([]);
+    setEditingActionIndex(null);
+
     if (avItems.length > 0) {
-      setCurrentActionItem({ id: avItems[0].id!, count: avItems[0].quantity, report: 'الجهاز بحاجة إلى صيانة', unitCost: 0, cost: 0, decision: 'repairing' });
-      setActionItems([]);
-      setEditingActionIndex(null);
+      const firstItem = avItems[0];
+      if (invoice.status === '22') {
+        // Phase 2: pre-fill first item's report & decision from Phase 1 inputs!
+        const initialDecision = (firstItem.subStatus === 'intact' || firstItem.subStatus === 'unrepairable' || firstItem.subStatus === 'repairing') 
+          ? firstItem.subStatus 
+          : 'repairing';
+        setSyncedCurrentActionItem({
+          id: firstItem.id!,
+          count: firstItem.quantity,
+          report: firstItem.engineerReport || (initialDecision === 'repairing' ? 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز' : initialDecision === 'intact' ? 'سليم' : 'لايصلح'),
+          unitCost: firstItem.cost || 0,
+          cost: (firstItem.cost || 0) * firstItem.quantity,
+          decision: initialDecision as 'repairing' | 'intact' | 'unrepairable'
+        });
+      } else {
+        // Phase 1 or normal: Reset and initialize one entry form
+        setSyncedCurrentActionItem({
+          id: firstItem.id!,
+          count: firstItem.quantity,
+          report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+          unitCost: 0,
+          cost: 0,
+          decision: 'repairing'
+        });
+      }
     }
   };
 
   const handleUpdateCurrentField = (field: string, value: any) => {
-    const item = { ...currentActionItem, [field]: value };
+    let item = { ...currentActionItem, [field]: value };
+    if (selectedInvoice && selectedInvoice.status === '21') {
+      item.unitCost = 0;
+      item.cost = 0;
+    }
     if (field === 'id') {
       const maxCount = getAvailableQuantity(value, -1);
       // Show total available quantity of the selected device by default
       item.count = maxCount;
+
+      if (selectedInvoice && selectedInvoice.status === '22') {
+        const latestData = getLatestItemData(value, actionItems);
+        if (latestData) {
+          item.decision = latestData.decision;
+          item.report = latestData.report;
+          item.unitCost = latestData.unitCost;
+          item.cost = latestData.unitCost * Number(maxCount || 0);
+        }
+      } else {
+        item.decision = 'repairing';
+        item.report = 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز';
+        item.unitCost = 0;
+        item.cost = 0;
+      }
     }
     if (field === 'decision') {
       if (value !== 'repairing') {
          item.unitCost = 0;
          item.cost = 0;
       }
-      if (value === 'repairing') item.report = 'الجهاز بحاجة إلى صيانة';
+      if (value === 'repairing') item.report = 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز';
       else if (value === 'intact') item.report = 'سليم';
       else if (value === 'unrepairable') item.report = 'لايصلح';
     } else if (field === 'count' || field === 'unitCost') {
-      item.cost = Number(item.count || 0) * Number(item.unitCost || 0);
+      if (selectedInvoice && selectedInvoice.status !== '21') {
+        item.cost = Number(item.count || 0) * Number(item.unitCost || 0);
+      } else {
+        item.cost = 0;
+      }
     }
-    setCurrentActionItem(item as any);
+
+    if (field === 'technical') {
+      const outcomeVal = item.outcome !== undefined ? item.outcome : 'تشغيل كامل للجهاز';
+      item.report = value + " | " + outcomeVal;
+    } else if (field === 'outcome') {
+      const technicalVal = item.technical !== undefined ? item.technical : 'الجهاز بحاجة إلى صيانة';
+      item.report = technicalVal + " | " + value;
+    }
+
+    setSyncedCurrentActionItem(item as any);
   };
 
   const handleSaveCurrentItem = () => {
@@ -302,19 +504,33 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
       const usedQty = nextItems.reduce((sum, row) => row.id === nextAvailableItem.id ? sum + row.count : sum, 0);
       const remQty = Math.max(0, nextAvailableItem.quantity - usedQty);
 
-      setCurrentActionItem({
-        id: nextAvailableItem.id!,
-        count: remQty, // Display total remaining quantity of next device
-        report: 'الجهاز بحاجة إلى صيانة',
-        unitCost: 0,
-        cost: 0,
-        decision: 'repairing'
-      });
+      if (selectedInvoice && selectedInvoice.status === '22') {
+        const latestData = getLatestItemData(nextAvailableItem.id!, nextItems);
+        if (latestData) {
+          setSyncedCurrentActionItem({
+            id: nextAvailableItem.id!,
+            count: remQty,
+            report: latestData.report,
+            unitCost: latestData.unitCost,
+            cost: latestData.unitCost * remQty,
+            decision: latestData.decision
+          });
+        }
+      } else {
+        setSyncedCurrentActionItem({
+          id: nextAvailableItem.id!,
+          count: remQty,
+          report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+          unitCost: 0,
+          cost: 0,
+          decision: 'repairing'
+        });
+      }
     } else {
-      setCurrentActionItem({
+      setSyncedCurrentActionItem({
         id: '',
         count: '',
-        report: '',
+        report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
         unitCost: 0,
         cost: 0,
         decision: 'repairing'
@@ -323,7 +539,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
   };
 
   const handleEditRow = (index: number) => {
-    setCurrentActionItem(actionItems[index]);
+    setSyncedCurrentActionItem(actionItems[index]);
     setEditingActionIndex(index);
   };
 
@@ -340,19 +556,33 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
       const usedQty = actionItems.reduce((sum, row) => row.id === availableItem.id ? sum + row.count : sum, 0);
       const remQty = Math.max(0, availableItem.quantity - usedQty);
 
-      setCurrentActionItem({
-        id: availableItem.id!,
-        count: remQty, // Display total remaining quantity
-        report: 'الجهاز بحاجة إلى صيانة',
-        unitCost: 0,
-        cost: 0,
-        decision: 'repairing'
-      });
+      if (selectedInvoice && selectedInvoice.status === '22') {
+        const latestData = getLatestItemData(availableItem.id!, actionItems);
+        if (latestData) {
+          setSyncedCurrentActionItem({
+            id: availableItem.id!,
+            count: remQty,
+            report: latestData.report,
+            unitCost: latestData.unitCost,
+            cost: latestData.unitCost * remQty,
+            decision: latestData.decision
+          });
+        }
+      } else {
+        setSyncedCurrentActionItem({
+          id: availableItem.id!,
+          count: remQty,
+          report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+          unitCost: 0,
+          cost: 0,
+          decision: 'repairing'
+        });
+      }
     } else {
-      setCurrentActionItem({
+      setSyncedCurrentActionItem({
         id: '',
         count: '',
-        report: '',
+        report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
         unitCost: 0,
         cost: 0,
         decision: 'repairing'
@@ -382,19 +612,33 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
       const usedQty = nextItems.reduce((sum, row) => row.id === availableItem.id ? sum + row.count : sum, 0);
       const remQty = Math.max(0, availableItem.quantity - usedQty);
 
-      setCurrentActionItem({
-        id: availableItem.id!,
-        count: remQty, // Display total remaining quantity
-        report: 'الجهاز بحاجة إلى صيانة',
-        unitCost: 0,
-        cost: 0,
-        decision: 'repairing'
-      });
+      if (selectedInvoice && selectedInvoice.status === '22') {
+        const latestData = getLatestItemData(availableItem.id!, nextItems);
+        if (latestData) {
+          setSyncedCurrentActionItem({
+            id: availableItem.id!,
+            count: remQty,
+            report: latestData.report,
+            unitCost: latestData.unitCost,
+            cost: latestData.unitCost * remQty,
+            decision: latestData.decision
+          });
+        }
+      } else {
+        setSyncedCurrentActionItem({
+          id: availableItem.id!,
+          count: remQty,
+          report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+          unitCost: 0,
+          cost: 0,
+          decision: 'repairing'
+        });
+      }
     } else {
-      setCurrentActionItem({
+      setSyncedCurrentActionItem({
         id: '',
         count: '',
-        report: '',
+        report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
         unitCost: 0,
         cost: 0,
         decision: 'repairing'
@@ -644,7 +888,8 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     if (!selectedInvoice || actionItems.length === 0 || !engineerName) return;
     
     // Validation: if repairing, cost must be > 0.
-    const hasInvalidCost = actionItems.some(row => row.decision === 'repairing' && (Number(row.cost) <= 0 || isNaN(Number(row.cost))));
+    const isPhase1 = selectedInvoice.status === '21';
+    const hasInvalidCost = !isPhase1 && actionItems.some(row => row.decision === 'repairing' && (Number(row.cost) <= 0 || isNaN(Number(row.cost))));
     if (hasInvalidCost) {
       alert('يجب إدخال تكلفة صيانة أكبر من الصفر للأجهزة التي تحتاج إلى صيانة.');
       return;
@@ -664,7 +909,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         if (!oItem) continue;
         if (!itemRemaining.has(oItem.id!)) {
            itemRemaining.set(oItem.id!, Number(oItem.quantity) || 0);
-        }
+         }
       }
 
       for (const row of actionItems) {
@@ -672,7 +917,14 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         const originalItem = invoiceItems.find(i => i.id === row.id);
         if (!originalItem) continue;
 
-        const updatedStatus = row.decision === 'intact' ? '50' : row.decision === 'unrepairable' ? '50' : '30';
+        const updatedStatus = isPhase1 
+          ? '22' 
+          : (row.decision === 'intact' ? '50' : row.decision === 'unrepairable' ? '50' : '30');
+
+        const itemSubStatus = isPhase1 
+          ? row.decision 
+          : (row.decision === 'intact' ? 'intact' : row.decision === 'unrepairable' ? 'unrepairable' : '');
+
         const rowCount = Number(row.count) || 1;
         let rem = itemRemaining.get(originalItem.id!) || 0;
 
@@ -684,7 +936,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
             id: splitItemRef.id,
             quantity: rowCount,
             status: updatedStatus,
-            subStatus: row.decision === 'intact' ? 'intact' : row.decision === 'unrepairable' ? 'unrepairable' : '',
+            subStatus: itemSubStatus,
             source: 'inspection',
             engineerReport: row.report,
             cost: row.decision === 'repairing' ? (Number(row.cost) || 0) : 0,
@@ -702,7 +954,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
           // update fully
           batch.update(doc(db, 'invoice_items', originalItem.id!), {
             status: updatedStatus,
-            subStatus: row.decision === 'intact' ? 'intact' : row.decision === 'unrepairable' ? 'unrepairable' : '',
+            subStatus: itemSubStatus,
             source: 'inspection',
             quantity: rem,
             engineerReport: row.report,
@@ -719,7 +971,9 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         if (!row.id || Number(row.count) <= 0) continue;
         const originalItem = invoiceItems.find(i => i.id === row.id);
         if (!originalItem) continue;
-        const updatedStatus = row.decision === 'intact' ? '50' : row.decision === 'unrepairable' ? '50' : '30';
+        const updatedStatus = isPhase1 
+          ? '22' 
+          : (row.decision === 'intact' ? '50' : row.decision === 'unrepairable' ? '50' : '30');
         finalItemStatuses.push(updatedStatus);
       }
       
@@ -731,21 +985,29 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
 
       // Determine overall invoice status
       let finalInvoiceStatus = '50';
-      if (finalItemStatuses.some(s => s === '70' || s === 'cancelled')) {
-        finalInvoiceStatus = '70';
-      } else if (finalItemStatuses.some(s => s === '10' || s === 'new')) {
-        finalInvoiceStatus = '10';
-      } else if (finalItemStatuses.some(s => s === '20')) {
-        finalInvoiceStatus = '20';
-      } else if (finalItemStatuses.some(s => s === '30' || s === '35' || s === 'awaiting_approval' || s === 'awaiting_parts')) {
-        finalInvoiceStatus = '30';
-      } else if (finalItemStatuses.some(s => s === '40' || s === 'repairing')) {
-        finalInvoiceStatus = '40';
+      if (selectedInvoice.status === '21') {
+        finalInvoiceStatus = '22';
+      } else {
+        if (finalItemStatuses.some(s => s === '70' || s === 'cancelled')) {
+          finalInvoiceStatus = '70';
+        } else if (finalItemStatuses.some(s => s === '10' || s === 'new')) {
+          finalInvoiceStatus = '10';
+        } else if (finalItemStatuses.some(s => s === '20')) {
+          finalInvoiceStatus = '20';
+        } else if (finalItemStatuses.some(s => s === '21')) {
+          finalInvoiceStatus = '21';
+        } else if (finalItemStatuses.some(s => s === '22')) {
+          finalInvoiceStatus = '22';
+        } else if (finalItemStatuses.some(s => s === '30' || s === '35' || s === 'awaiting_approval' || s === 'awaiting_parts')) {
+          finalInvoiceStatus = '30';
+        } else if (finalItemStatuses.some(s => s === '40' || s === 'repairing')) {
+          finalInvoiceStatus = '40';
+        }
       }
 
       batch.update(doc(db, 'invoices', selectedInvoice.id!), {
         status: finalInvoiceStatus,
-        totalCost: (selectedInvoice.totalCost || 0) + totalCostAdjustment,
+        totalCost: isPhase1 ? 0 : (selectedInvoice.totalCost || 0) + totalCostAdjustment,
         updatedAt: serverTimestamp()
       });
 
@@ -778,7 +1040,18 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         await handleExportPDFAndWhatsApp(selectedInvoice);
       }
 
-      showToast('تم حفظ وترحيل نتيجة الفحص الفني للتقرير بنجاح.');
+      if (selectedInvoice.status === '21') {
+        showToast('تم حفظ تقرير فحص المهندس (المرحلة الأولى) بنجاح وتحويل الفاتورة إلى المرحلة الثانية للتعميد والتسعير.');
+        setSubTab('phased_inspection');
+        setPhasedStage('phase2');
+      } else if (selectedInvoice.status === '22') {
+        showToast('تم اعتماد الفحص والتسعير (المرحلة الثانية) للمشرف بنجاح للفاتورة.');
+        setSubTab('phased_inspection');
+        setPhasedStage('phase2');
+      } else {
+        showToast('تم حفظ وترحيل نتيجة الفحص الفني للتقرير بنجاح.');
+        setSubTab('under_inspection');
+      }
       setShowPreviewReport(false);
       setSelectedInvoice(null);
     } catch(err) {
@@ -1139,7 +1412,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     const isSaveDisabled = !currentActionItem.id || 
                            isQuantityInvalid || 
                            !currentActionItem.report.trim() || 
-                           (currentActionItem.decision === 'repairing' && (Number(currentActionItem.unitCost) <= 0 || isNaN(Number(currentActionItem.unitCost))));
+                           (selectedInvoice.status !== '21' && currentActionItem.decision === 'repairing' && (Number(currentActionItem.unitCost) <= 0 || isNaN(Number(currentActionItem.unitCost))));
 
     return (
       <div className="w-full max-w-full overflow-x-hidden space-y-0 pb-32 md:pb-8" dir="rtl">
@@ -1310,7 +1583,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                    </div>
                  </div>
 
-                 <div className={`flex flex-row items-center gap-4 transition-opacity ${currentActionItem.decision !== 'repairing' ? 'opacity-50 pointer-events-none' : ''} w-full md:w-auto`}>
+                 <div className={`flex-row items-center gap-4 transition-opacity ${currentActionItem.decision !== 'repairing' ? 'opacity-50 pointer-events-none' : ''} w-full ${selectedInvoice?.status === '21' ? 'hidden' : 'flex'} md:w-auto`}>
                    <div className="flex items-center gap-2 flex-1 md:flex-none">
                      <label className="text-xs text-gray-500 whitespace-nowrap">التكلفة للوحدة</label>
                       <input 
@@ -1344,22 +1617,63 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                     </div>
                   </div>
                </div>
-              <div className="flex items-start gap-3 w-full">
-                <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">تقرير الفحص</label>
-                <textarea 
-                  value={currentActionItem.report}
-                  onChange={e => handleUpdateCurrentField('report', e.target.value)}
-                  onFocus={(e) => {
-                    e.target.select();
-                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }}
-                  onClick={(e) => {
-                    (e.target as HTMLTextAreaElement).select();
-                  }}
-                  className="flex-1 bg-black/40 border border-white/10 px-4 py-2 focus:border-purple-500 outline-none transition-all h-12 resize-none rounded-xl text-right leading-relaxed"
-                  placeholder="أدخل تفصيل المشكلة..."
-                />
-              </div>
+              {currentActionItem.decision === 'repairing' ? (
+                <div className="space-y-4 w-full">
+                  <div className="flex items-start gap-3 w-full">
+                    <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">التقرير الفني</label>
+                    <textarea 
+                      value={currentActionItem.technical || ''}
+                      onChange={e => {
+                        handleUpdateCurrentField('technical', e.target.value);
+                      }}
+                      onFocus={(e) => {
+                        e.target.select();
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                      onClick={(e) => {
+                        (e.target as HTMLTextAreaElement).select();
+                      }}
+                      className="flex-1 bg-black/40 border border-white/10 px-4 py-2 focus:border-purple-500 outline-none transition-all h-12 resize-none rounded-xl text-right leading-relaxed"
+                      placeholder="أدخل التقرير الفني..."
+                    />
+                  </div>
+                  <div className="flex items-start gap-3 w-full">
+                    <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">نتيجة الصيانة</label>
+                    <textarea 
+                      value={currentActionItem.outcome || ''}
+                      onChange={e => {
+                        handleUpdateCurrentField('outcome', e.target.value);
+                      }}
+                      onFocus={(e) => {
+                        e.target.select();
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                      onClick={(e) => {
+                        (e.target as HTMLTextAreaElement).select();
+                      }}
+                      className="flex-1 bg-black/40 border border-white/10 px-4 py-2 focus:border-purple-500 outline-none transition-all h-12 resize-none rounded-xl text-right leading-relaxed"
+                      placeholder="أدخل نتيجة الصيانة للعميل..."
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 w-full">
+                  <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">تقرير الفحص</label>
+                  <textarea 
+                    value={currentActionItem.report}
+                    onChange={e => handleUpdateCurrentField('report', e.target.value)}
+                    onFocus={(e) => {
+                      e.target.select();
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                    onClick={(e) => {
+                      (e.target as HTMLTextAreaElement).select();
+                    }}
+                    className="flex-1 bg-black/40 border border-white/10 px-4 py-2 focus:border-purple-500 outline-none transition-all h-12 resize-none rounded-xl text-right leading-relaxed"
+                    placeholder="أدخل تفصيل المشكلة..."
+                  />
+                </div>
+              )}
 
               <div className="flex gap-4 mt-4 justify-end border-t border-white/5 pt-4">
                  {editingActionIndex !== null ? (
@@ -1386,7 +1700,28 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                           if (availableItem) {
                             const usedQty = actionItems.reduce((sum, row) => row.id === availableItem.id ? sum + row.count : sum, 0);
                             const remQty = Math.max(0, availableItem.quantity - usedQty);
-                            setCurrentActionItem({ id: availableItem.id!, count: remQty, report: 'الجهاز بحاجة إلى صيانة', unitCost: 0, cost: 0, decision: 'repairing' });
+                            if (selectedInvoice && selectedInvoice.status === '22') {
+                              const latestData = getLatestItemData(availableItem.id!, actionItems);
+                              if (latestData) {
+                                setSyncedCurrentActionItem({
+                                  id: availableItem.id!,
+                                  count: remQty,
+                                  report: latestData.report,
+                                  unitCost: latestData.unitCost,
+                                  cost: latestData.unitCost * remQty,
+                                  decision: latestData.decision
+                                });
+                              }
+                            } else {
+                              setSyncedCurrentActionItem({
+                                id: availableItem.id!,
+                                count: remQty,
+                                report: 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز',
+                                unitCost: 0,
+                                cost: 0,
+                                decision: 'repairing'
+                              });
+                            }
                           }
                        }}
                        className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl font-bold transition-all text-sm whitespace-nowrap"
@@ -1416,7 +1751,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                       <th className="px-4 py-4 text-center whitespace-nowrap">الكمية</th>
                       <th className="px-4 py-4 text-center whitespace-nowrap">القرار</th>
                       <th className="px-4 py-4 whitespace-nowrap">تقرير الفحص</th>
-                      <th className="px-4 py-4 text-center whitespace-nowrap">التكلفة</th>
+                      {selectedInvoice?.status !== '21' && <th className="px-4 py-4 text-center whitespace-nowrap">التكلفة</th>}
                       <th className="px-4 py-4 pl-6 text-center whitespace-nowrap">الإجراءات</th>
                    </tr>
                  </thead>
@@ -1433,8 +1768,18 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                            {item.decision === 'intact' && <span className="text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded text-[10px] font-bold">سليم</span>}
                            {item.decision === 'unrepairable' && <span className="text-red-500 bg-red-500/10 px-2 py-1 rounded text-[10px] font-bold">لا يصلح</span>}
                          </td>
-                         <td className="px-4 py-3 text-gray-300 max-w-[200px] truncate whitespace-nowrap" title={item.report}>{item.report}</td>
-                         <td className="px-4 py-3 text-purple-400 font-bold text-center whitespace-nowrap font-mono">{item.cost > 0 ? `${item.cost.toLocaleString('en-US')} ${selectedInvoice.currency || 'USD'}` : '-'}</td>
+                         <td className="px-4 py-3 text-gray-300 max-w-[250px] truncate whitespace-nowrap text-right" title={item.report}>
+                            {(() => {
+                              const { technical, outcome } = parseEngineerReport(item.report);
+                              return (
+                                <div className="flex flex-col">
+                                  <span className="text-gray-200 text-xs truncate max-w-[250px]">{technical}</span>
+                                  {outcome && <span className="text-purple-400 text-[10px] font-bold truncate max-w-[250px]">النتيجة: {outcome}</span>}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                         {selectedInvoice?.status !== '21' && <td className="px-4 py-3 text-purple-400 font-bold text-center whitespace-nowrap font-mono">{item.cost > 0 ? `${item.cost.toLocaleString('en-US')} ${selectedInvoice.currency || 'USD'}` : '-'}</td>}
                          <td className="px-4 py-3 pl-6 flex items-center justify-center gap-2 whitespace-nowrap">
                            <button onClick={() => handleEditRow(idx)} className="p-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white rounded-lg transition-colors whitespace-nowrap">
                              تعديل
@@ -1451,16 +1796,18 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
             </div>
           )}
 
-          <div className="flex bg-purple-600/10 border-y sm:border border-purple-600/30 p-5 sm:p-8 rounded-none sm:rounded-[2.5rem] items-center justify-between shadow-2xl mt-6">
-            <div>
-              <p className="text-purple-500 text-sm font-black uppercase tracking-widest">إجمالي التكلفة التقديرية</p>
+          {selectedInvoice?.status !== '21' && (
+            <div className="flex bg-purple-600/10 border-y sm:border border-purple-600/30 p-5 sm:p-8 rounded-none sm:rounded-[2.5rem] items-center justify-between shadow-2xl mt-6">
+              <div>
+                <p className="text-purple-500 text-sm font-black uppercase tracking-widest">إجمالي التكلفة التقديرية</p>
+              </div>
+              <div>
+                <p className="text-4xl font-black font-mono text-white">
+                  {totalCost} <span className="text-base font-sans text-purple-500 rtl:ml-2">{selectedInvoice?.currency || 'USD'}</span>
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-4xl font-black font-mono text-white">
-                {totalCost} <span className="text-base font-sans text-purple-500 rtl:ml-2">{selectedInvoice?.currency || 'USD'}</span>
-              </p>
-            </div>
-          </div>
+          )}
 
           <div className="px-4 sm:px-0 py-4 mb-8" dir="rtl">
              <button 
@@ -1515,7 +1862,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
             <SearchIcon size={160} />
           </div>
 
-          <div className="relative z-10 grid grid-cols-2 divide-x divide-white/15 rtl:divide-x-reverse">
+          <div className="relative z-10 grid grid-cols-3 divide-x divide-white/15 rtl:divide-x-reverse">
             {/* Clickable section 1: New Devices */}
             <button
               onClick={() => {
@@ -1553,7 +1900,27 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
               )}
               <span className="text-3xl sm:text-5xl font-black font-mono tracking-wider drop-shadow-md">{countInspectionDevices}</span>
               <span className="text-xs sm:text-sm font-bold font-cairo mt-2 text-purple-100">أجهزة قيد الفحص</span>
-              <span className="text-[10px] text-purple-200 mt-1 opacity-70">إجمالي الأجهزة الحالية</span>
+              <span className="text-[10px] text-purple-200 mt-1 opacity-70">المرحلة الواحدة</span>
+            </button>
+
+            {/* Clickable section 3: Phased Inspection Devices */}
+            <button
+              onClick={() => {
+                setSubTab('phased_inspection');
+                setSelectedInvoice(null);
+              }}
+              className={`flex flex-col items-center justify-center py-4 px-2 transition-all rounded-2xl relative cursor-pointer ${
+                subTab === 'phased_inspection' 
+                  ? 'bg-white/15 shadow-inner scale-[1.02]' 
+                  : 'hover:bg-white/5 opacity-80 hover:opacity-100'
+              }`}
+            >
+              {subTab === 'phased_inspection' && (
+                <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping" />
+              )}
+              <span className="text-3xl sm:text-5xl font-black font-mono tracking-wider drop-shadow-md">{countPhasedDevices}</span>
+              <span className="text-xs sm:text-sm font-bold font-cairo mt-2 text-purple-100">أجهزة قيد فحص مرحلي</span>
+              <span className="text-[10px] text-purple-200 mt-1 opacity-70">فحص وتعميد على مرحلتين</span>
             </button>
           </div>
         </div>
@@ -1571,6 +1938,42 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
           />
         </div>
       </div>
+
+      {subTab === 'phased_inspection' && (
+        <div className="grid grid-cols-2 gap-4 px-2">
+          {/* Phase 1 card */}
+          <button
+            onClick={() => setPhasedStage('phase1')}
+            className={`p-4 rounded-2xl border text-right transition-all flex items-center justify-between cursor-pointer ${
+              phasedStage === 'phase1'
+                ? 'bg-purple-600/10 border-purple-500 text-purple-400'
+                : 'bg-[#1a1a1a] border-white/5 text-gray-400 hover:border-white/10'
+            }`}
+          >
+            <div>
+              <p className="text-xs text-gray-500 font-bold">فحص مرحلة أولى</p>
+              <h3 className="text-sm font-black font-cairo mt-1">تقرير المهندس (بدون سعر)</h3>
+            </div>
+            <div className="text-2xl font-black font-mono">{countPhase1Devices}</div>
+          </button>
+
+          {/* Phase 2 card */}
+          <button
+            onClick={() => setPhasedStage('phase2')}
+            className={`p-4 rounded-2xl border text-right transition-all flex items-center justify-between cursor-pointer ${
+              phasedStage === 'phase2'
+                ? 'bg-purple-600/10 border-purple-500 text-purple-400'
+                : 'bg-[#1a1a1a] border-white/5 text-gray-400 hover:border-white/10'
+            }`}
+          >
+            <div>
+              <p className="text-xs text-gray-500 font-bold">مرحلة ثانية</p>
+              <h3 className="text-sm font-black font-cairo mt-1">التعميد والتسعير من المشرف</h3>
+            </div>
+            <div className="text-2xl font-black font-mono">{countPhase2Devices}</div>
+          </button>
+        </div>
+      )}
 
       <div className="bg-[#1a1a1a] border-y border-white/5 overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
@@ -1592,7 +1995,11 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                     <td className="px-2 py-2 font-mono text-white text-center whitespace-nowrap">{invoice.invoiceNumber}</td>
                     <td className="px-2 py-2 font-bold truncate">{invoice.customerName || getCustomerName(invoice.customerId)}</td>
                     <td className="px-2 py-2 font-mono text-purple-400 font-bold text-center whitespace-nowrap">
-                      {subTab === 'new_devices' ? getNewDevicesCount(invoice.invoiceNumber) : getInspectionDevicesCount(invoice.invoiceNumber)}
+                      {subTab === 'new_devices' 
+                        ? getNewDevicesCount(invoice.invoiceNumber) 
+                        : subTab === 'under_inspection' 
+                        ? getInspectionDevicesCount(invoice.invoiceNumber)
+                        : countPhasedInvoicesCount(invoice.invoiceNumber, phasedStage === 'phase1' ? '21' : '22')}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
                       <div className="flex items-center justify-center gap-3">
@@ -1604,8 +2011,20 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                             onChange={() => setSelectedOptions(prev => ({ ...prev, [invoice.id!]: 'action1' }))}
                             className="accent-purple-600 w-4 h-4 sm:w-5 sm:h-5 cursor-pointer ring-1 ring-purple-300 dark:ring-purple-700 rounded-full"
                           />
-                          <span>{subTab === 'new_devices' ? 'دخول فحص' : 'إجراء فحص'}</span>
+                          <span>{subTab === 'new_devices' ? 'دخول فحص' : subTab === 'phased_inspection' ? 'معاينة واعتماد' : 'إجراء فحص'}</span>
                         </label>
+                        {subTab === 'under_inspection' && (
+                          <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10px] sm:text-xs font-bold text-amber-500 dark:text-amber-400">
+                            <input
+                              type="radio"
+                              name={`action-${invoice.id}`}
+                              checked={currentChoice === 'action3'}
+                              onChange={() => setSelectedOptions(prev => ({ ...prev, [invoice.id!]: 'action3' }))}
+                              className="accent-amber-500 w-4 h-4 sm:w-5 sm:h-5 cursor-pointer ring-1 ring-amber-300 dark:ring-amber-700 rounded-full"
+                            />
+                            <span>تحويل لفحص مرحلي</span>
+                          </label>
+                        )}
                         <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10px] sm:text-xs font-bold text-red-600 dark:text-red-400">
                           <input
                             type="radio"
@@ -1624,6 +2043,8 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                         className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all inline-flex items-center justify-center gap-1 ${
                           currentChoice === 'action2' 
                             ? 'bg-rose-600/15 hover:bg-rose-600 text-rose-500 hover:text-white' 
+                            : currentChoice === 'action3'
+                            ? 'bg-amber-600/15 hover:bg-amber-600 text-amber-500 hover:text-white'
                             : 'bg-purple-600/15 hover:bg-purple-600 text-purple-500 hover:text-white'
                         }`}
                       >
@@ -1638,7 +2059,11 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
               {activeInvoices.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-2 py-8 text-center text-[10px] text-gray-500 font-bold">
-                    {subTab === 'new_devices' ? 'لا يوجد أجهزة جديدة بانتظار دخول الفحص.' : 'لا توجد أجهزة قيد الفحص حالياً.'}
+                    {subTab === 'new_devices' 
+                      ? 'لا يوجد أجهزة جديدة بانتظار دخول الفحص.' 
+                      : subTab === 'under_inspection' 
+                      ? 'لا توجد أجهزة قيد الفحص حالياً.' 
+                      : 'لا توجد أجهزة قيد فحص مرحلي في هذه المرحلة حالياً.'}
                   </td>
                 </tr>
               )}

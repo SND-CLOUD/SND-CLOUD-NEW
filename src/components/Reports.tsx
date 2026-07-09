@@ -263,7 +263,7 @@ export default function Reports({ user, onBack }: { user: User; onBack?: () => v
 
         // Detailed In-Shop Classifications
         const inShopNew = inShopItems.filter(i => i.status === '10' || i.status === 'new');
-        const inShopInspection = inShopItems.filter(i => i.status === '20' || i.status === 'inspected' || i.status === 'testing');
+        const inShopInspection = inShopItems.filter(i => i.status === '20' || i.status === '21' || i.status === '22' || i.status === 'inspected' || i.status === 'testing');
         const inShopRepairing = inShopItems.filter(i => i.status === '40' || i.status === 'repairing');
         const inShopAwaitingApproval = inShopItems.filter(i => i.status === '30' || i.status === 'awaiting_approval');
         const inShopAwaitingParts = inShopItems.filter(i => i.status === '35' || i.status === 'awaiting_parts');
@@ -366,7 +366,7 @@ export default function Reports({ user, onBack }: { user: User; onBack?: () => v
     if (activeSubView === 'in-shop') {
       if (inShopFilter === 'all') return inShopItems;
       if (inShopFilter === 'new') return inShopItems.filter(i => i.status === '10' || i.status === 'new');
-      if (inShopFilter === 'inspection') return inShopItems.filter(i => i.status === '20' || i.status === 'inspected' || i.status === 'testing');
+      if (inShopFilter === 'inspection') return inShopItems.filter(i => i.status === '20' || i.status === '21' || i.status === '22' || i.status === 'inspected' || i.status === 'testing');
       if (inShopFilter === 'repairing') return inShopItems.filter(i => i.status === '40' || i.status === 'repairing');
       if (inShopFilter === 'awaiting_approval') return inShopItems.filter(i => i.status === '30' || i.status === 'awaiting_approval');
       if (inShopFilter === 'awaiting_parts') return inShopItems.filter(i => i.status === '35' || i.status === 'awaiting_parts');
@@ -442,6 +442,8 @@ export default function Reports({ user, onBack }: { user: User; onBack?: () => v
     }
     if (status === '10' || status === 'new') return 'أجهزة جديدة';
     if (status === '20' || status === 'inspected' || status === 'testing') return 'قيد الفحص';
+    if (status === '21') return 'فحص مرحلي 1';
+    if (status === '22') return 'فحص مرحلي 2';
     if (status === '30' || status === 'awaiting_approval') return 'انتظار الموافقة والقطع';
     if (status === '35' || status === 'awaiting_parts') return 'انتظار قطع الغيار';
     if (status === '40' || status === 'repairing') return 'قيد الصيانة';
