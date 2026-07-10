@@ -624,11 +624,11 @@ class LocalDatabase {
       const fundsTable = await this.db.query('SELECT * FROM fin_funds');
       if (fundsTable.values && fundsTable.values.length === 0) {
         await this.db.run('INSERT INTO fin_funds (id, name, type, currency, description, status, balance) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          ['fund-1', 'صندوق الدولار الرئيسي', 'cash', 'دولار', 'الصندوق الرئيسي للعملات الأجنبية بالدولار', 'active', 1500.0]);
+          ['fund-1', 'صندوق الدولار الرئيسي', 'cash', 'دولار', 'الصندوق الرئيسي للعملات الأجنبية بالدولار', 'active', 0.0]);
         await this.db.run('INSERT INTO fin_funds (id, name, type, currency, description, status, balance) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          ['fund-2', 'صندوق الريال اليمني', 'cash', 'ريال يمني', 'الصندوق الرئيسي للعملة المحلية بالريال اليمني', 'active', 500000.0]);
+          ['fund-2', 'صندوق الريال اليمني', 'cash', 'ريال يمني', 'الصندوق الرئيسي للعملة المحلية بالريال اليمني', 'active', 0.0]);
         await this.db.run('INSERT INTO fin_funds (id, name, type, currency, description, status, balance) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          ['fund-3', 'صندوق الريال السعودي', 'cash', 'ريال سعودي', 'صندوق احتياطي بالريال السعودي', 'active', 2500.0]);
+          ['fund-3', 'صندوق الريال السعودي', 'cash', 'ريال سعودي', 'صندوق احتياطي بالريال السعودي', 'active', 0.0]);
       }
 
       // Seed accounting defaults: Payment Methods
