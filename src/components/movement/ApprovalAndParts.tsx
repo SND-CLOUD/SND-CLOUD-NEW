@@ -271,8 +271,10 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
       message += `- *القيمة الإجمالية المقدرة:* ${totalInvoiceCost.toLocaleString('en-US')} ${currency}\n\n`;
       message += `*جدول الأجهزة المسجلة بالفحص:*\n`;
       invoiceSpecItems.forEach((item, index) => {
+        const parsed = parseEngineerReport(item.engineerReport || '');
+        const displayReport = parsed.technical || '-';
         message += `\n_${index + 1}. *${item.deviceType} - ${item.deviceName || ''}*_\n`;
-        message += `   • تقرير المعاينة: ${item.engineerReport || item.faultType || 'قيد المعاينة والفحص'}\n`;
+        message += `   • تقرير المعاينة: ${displayReport}\n`;
         message += `   • التكلفة: ${(item.cost || item.unitCost || 0).toLocaleString('en-US')} ${currency}\n`;
       });
       message += `\nيسعدنا مراجعتكم وبانتظار الموافقة لبدء الصيانة فورًا. شكرًا لتعاملكم الراقي معنا!`;
@@ -1085,7 +1087,7 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
                         <tr>
                           <th className="px-2 py-1.5 text-center w-[5%] border-l border-gray-400 bg-gray-200/50">م</th>
                           <th className="px-2 py-1.5 border-l border-gray-400 w-[25%]">النوع/الجهاز</th>
-                          <th className="px-2 py-1.5 border-l border-gray-400 w-[40%]">الحالة - تقرير الفحص</th>
+                          <th className="px-2 py-1.5 border-l border-gray-400 w-[40%]">الحالة - نتيجة الصيانة</th>
                           <th className="px-2 py-1.5 text-center border-l border-gray-400 w-[12%]">سعر الوحدة</th>
                           <th className="px-2 py-1.5 text-center border-l border-gray-400 w-[8%]">العدد</th>
                           <th className="px-2 py-1.5 text-center w-[10%] font-black bg-gray-200/50">الإجمالي</th>
@@ -1097,6 +1099,12 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
                           const totalItemCost = Number(item.cost || 0);
                           const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
                           const statusLabel = getItemStatus(item);
+                          const outcomeText = (() => {
+                            if (statusLabel !== 'صيانة') return '';
+                            const reportVal = item.engineerReport || '';
+                            const parsed = parseEngineerReport(reportVal);
+                            return parsed.outcome || item.faultType || '';
+                          })();
                           
                           return (
                             <tr key={item.id} className="even:bg-gray-50/50 text-[11px] leading-none">
@@ -1104,16 +1112,9 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
                               <td className="px-2 py-1 font-bold text-gray-900 border-l border-gray-400 w-[25%] max-w-[190px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${item.deviceType} ${item.deviceName ? `- ${item.deviceName}` : ''}`}>
                                 {item.deviceType} {item.deviceName ? `- ${item.deviceName}` : ''}
                               </td>
-                              <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[40%] max-w-[310px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${statusLabel} - ${(() => {
-                                const reportVal = item.engineerReport || '';
-                                const parsed = parseEngineerReport(reportVal);
-                                return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || item.faultType || 'قيد المعاينة والمراجعة');
-                              })()}`}>
-                                <span className={statusLabel === 'سليم' ? 'text-emerald-700 font-bold' : statusLabel === 'لا يصلح' ? 'text-rose-700 font-bold' : 'text-amber-700 font-bold'}>{statusLabel}</span> - {(() => {
-                                  const reportVal = item.engineerReport || '';
-                                  const parsed = parseEngineerReport(reportVal);
-                                  return parsed.outcome ? `${parsed.technical} - ${parsed.outcome}` : (reportVal || item.faultType || 'قيد المعاينة والمراجعة');
-                                })()}
+                              <td className="px-2 py-1 text-gray-800 border-l border-gray-400 w-[40%] max-w-[310px] whitespace-nowrap overflow-hidden text-ellipsis" title={`${statusLabel}${outcomeText ? ` - ${outcomeText}` : ''}`}>
+                                <span className={statusLabel === 'سليم' ? 'text-emerald-700 font-bold' : statusLabel === 'لا يصلح' ? 'text-rose-700 font-bold' : 'text-amber-700 font-bold'}>{statusLabel}</span>
+                                {outcomeText ? ` - ${outcomeText}` : ''}
                               </td>
                               <td className="px-2 py-1 text-center font-mono text-gray-900 border-l border-gray-400 w-[12%]">
                                 {unitItemCost.toLocaleString('en-US')}

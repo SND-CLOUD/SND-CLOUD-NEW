@@ -321,7 +321,7 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
             source: 'maintenance',
             cost: splitItemCost,
             failureReason: isFailedOrRefused ? row.reason : null,
-            engineerReport: !isFailedOrRefused ? row.reason : originalItem.engineerReport,
+            engineerReport: originalItem.engineerReport,
             technician: engineerName,
             updatedAt: serverTimestamp()
           });
@@ -342,7 +342,7 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
             quantity: rem,
             cost: splitItemCost,
             failureReason: isFailedOrRefused ? row.reason : null,
-            engineerReport: !isFailedOrRefused ? row.reason : null,
+            engineerReport: originalItem.engineerReport,
             technician: engineerName,
             updatedAt: serverTimestamp()
           });

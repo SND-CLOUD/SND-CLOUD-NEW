@@ -439,14 +439,19 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
       if (selectedInvoice && selectedInvoice.status === '22') {
         const latestData = getLatestItemData(value, actionItems);
         if (latestData) {
+          const parsed = parseEngineerReport(latestData.report, true);
           item.decision = latestData.decision;
           item.report = latestData.report;
+          item.technical = parsed.technical;
+          item.outcome = parsed.outcome;
           item.unitCost = latestData.unitCost;
           item.cost = latestData.unitCost * Number(maxCount || 0);
         }
       } else {
         item.decision = 'repairing';
         item.report = 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز';
+        item.technical = 'الجهاز بحاجة إلى صيانة';
+        item.outcome = 'تشغيل كامل للجهاز';
         item.unitCost = 0;
         item.cost = 0;
       }
@@ -456,9 +461,21 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
          item.unitCost = 0;
          item.cost = 0;
       }
-      if (value === 'repairing') item.report = 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز';
-      else if (value === 'intact') item.report = 'سليم';
-      else if (value === 'unrepairable') item.report = 'لايصلح';
+      if (value === 'repairing') {
+        item.technical = 'الجهاز بحاجة إلى صيانة';
+        item.outcome = 'تشغيل كامل للجهاز';
+        item.report = 'الجهاز بحاجة إلى صيانة | تشغيل كامل للجهاز';
+      }
+      else if (value === 'intact') {
+        item.technical = 'سليم';
+        item.outcome = '';
+        item.report = 'سليم | ';
+      }
+      else if (value === 'unrepairable') {
+        item.technical = 'لا يصلح';
+        item.outcome = '';
+        item.report = 'لا يصلح | ';
+      }
     } else if (field === 'count' || field === 'unitCost') {
       if (selectedInvoice && selectedInvoice.status !== '21') {
         item.cost = Number(item.count || 0) * Number(item.unitCost || 0);
@@ -851,8 +868,10 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
       message += `- *القيمة الإجمالية المقدرة:* ${totalInvoiceCost.toLocaleString('en-US')} ${currency}\n\n`;
       message += `*جدول الأجهزة وتفاصيل الفحص:*\n`;
       previewItems.forEach((item, index) => {
+        const parsed = parseEngineerReport(item.engineerReport || '');
+        const displayReport = parsed.outcome || parsed.technical || 'قيد المراجعة';
         message += `\n_${index + 1}. *${item.deviceType} - ${item.deviceName || ''}*_\n`;
-        message += `   • تقرير الفحص: ${item.engineerReport || 'قيد المراجعة'}\n`;
+        message += `   • تقرير الفحص: ${displayReport}\n`;
         message += `   • التكلفة: ${(item.cost || item.unitCost || 0).toLocaleString('en-US')} ${currency}\n`;
       });
       message += `\nيسعدنا تواصلكم الراقي معنا! وبانتظار ردكم للمتابعة.`;
@@ -1617,7 +1636,6 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                     </div>
                   </div>
                </div>
-              {currentActionItem.decision === 'repairing' ? (
                 <div className="space-y-4 w-full">
                   <div className="flex items-start gap-3 w-full">
                     <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">التقرير الفني</label>
@@ -1656,24 +1674,6 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
                     />
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-start gap-3 w-full">
-                  <label className="text-xs text-gray-500 whitespace-nowrap w-20 mt-3">تقرير الفحص</label>
-                  <textarea 
-                    value={currentActionItem.report}
-                    onChange={e => handleUpdateCurrentField('report', e.target.value)}
-                    onFocus={(e) => {
-                      e.target.select();
-                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }}
-                    onClick={(e) => {
-                      (e.target as HTMLTextAreaElement).select();
-                    }}
-                    className="flex-1 bg-black/40 border border-white/10 px-4 py-2 focus:border-purple-500 outline-none transition-all h-12 resize-none rounded-xl text-right leading-relaxed"
-                    placeholder="أدخل تفصيل المشكلة..."
-                  />
-                </div>
-              )}
 
               <div className="flex gap-4 mt-4 justify-end border-t border-white/5 pt-4">
                  {editingActionIndex !== null ? (

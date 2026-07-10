@@ -1243,6 +1243,17 @@ export default function PrintPreviewOverlay({
                 const notes = String(it.technicalNotes || '').toLowerCase();
                 const reason = String(it.failureReason || '').toLowerCase();
 
+                if (
+                  subStatus === 'no_parts' || 
+                  statusVal === 'no_parts' ||
+                  reason.includes('قطع') || report.includes('قطع') || notes.includes('قطع') ||
+                  reason.includes('parts') || report.includes('parts') || notes.includes('parts') ||
+                  reason.includes('تتوفر') || report.includes('تتوفر') || notes.includes('تتوفر') ||
+                  reason.includes('توفر') || report.includes('توفر') || notes.includes('توفر')
+                ) {
+                  return 'عدم توفر قطع الغيار';
+                }
+
                 if (subStatus === 'ready' || statusVal === 'ready') return 'جاهز';
                 if (subStatus === 'intact' || statusVal === 'intact' || report.includes('سليم') || notes.includes('سليم')) return 'سليم';
                 if (
@@ -1308,41 +1319,76 @@ export default function PrintPreviewOverlay({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-black">
-                        {items.map((it: any, idx: number) => {
-                          const qty = Number(it.quantity || 1);
-                          const statusLabel = getItemStatusLabel(it);
-                          const isReady = statusLabel === 'جاهز';
-                          const originalUnitCost = qty > 0 ? Number(it.cost || 0) / qty : Number(it.cost || 0);
-                          const unitCost = isReady ? originalUnitCost : 0;
-                          const totalCost = isReady ? Number(it.cost || 0) : 0;
+                        {(() => {
+                          const getConditionRank = (item: any) => {
+                            const subStatus = getItemStatusLabel(item);
+                            if (subStatus === 'جاهز') return 1;
+                            if (subStatus === 'سليم') return 2;
+                            if (subStatus === 'لا يصلح' || subStatus === 'عدم توفر قطع الغيار') return 3;
+                            if (subStatus === 'لم يوافق') return 4;
+                            return 5;
+                          };
+                          const typeRanks: Record<string, number> = {};
+                          const nameRanks: Record<string, number> = {};
+                          items.forEach((item: any) => {
+                            const t = item.deviceType || '';
+                            const n = item.deviceName || '';
+                            const key = `${t}|${n}`;
+                            const r = getConditionRank(item);
+                            if (!(t in typeRanks) || r < typeRanks[t]) typeRanks[t] = r;
+                            if (!(key in nameRanks) || r < nameRanks[key]) nameRanks[key] = r;
+                          });
 
-                          let statusColor = 'text-amber-700';
-                          if (statusLabel === 'جاهز') statusColor = 'text-emerald-700';
-                          if (statusLabel === 'سليم') statusColor = 'text-blue-700';
-                          if (statusLabel === 'لا يصلح') statusColor = 'text-rose-700';
-                          if (statusLabel === 'لم يوافق') statusColor = 'text-gray-600';
+                          return [...items].sort((a, b) => {
+                            const tA = a.deviceType || '';
+                            const tB = b.deviceType || '';
+                            if (typeRanks[tA] !== typeRanks[tB]) return typeRanks[tA] - typeRanks[tB];
+                            if (tA !== tB) return tA.localeCompare(tB, 'ar');
+                            
+                            const nA = a.deviceName || '';
+                            const nB = b.deviceName || '';
+                            const keyA = `${tA}|${nA}`;
+                            const keyB = `${tB}|${nB}`;
+                            if (nameRanks[keyA] !== nameRanks[keyB]) return nameRanks[keyA] - nameRanks[keyB];
+                            if (nA !== nB) return nA.localeCompare(nB, 'ar');
+                            
+                            return getConditionRank(a) - getConditionRank(b);
+                          }).map((it: any, idx: number) => {
+                            const qty = Number(it.quantity || 1);
+                            const statusLabel = getItemStatusLabel(it);
+                            const isReady = statusLabel === 'جاهز';
+                            const originalUnitCost = qty > 0 ? Number(it.cost || 0) / qty : Number(it.cost || 0);
+                            const unitCost = isReady ? originalUnitCost : 0;
+                            const totalCost = isReady ? Number(it.cost || 0) : 0;
 
-                          return (
-                            <tr key={idx} className="hover:bg-gray-50/50">
-                              <td className="py-1 px-2 border-l border-black text-center font-mono whitespace-nowrap overflow-hidden text-ellipsis truncate">{idx + 1}</td>
-                              <td className="py-1 px-2 border-l border-black text-right whitespace-nowrap overflow-hidden text-ellipsis truncate">
-                                <div className="truncate max-w-[180px]" dir="rtl" title={`${it.deviceType} ${it.deviceName ? `- ${it.deviceName}` : ''}`}>
-                                  {it.deviceType} <span className="text-gray-500 text-[10px] font-normal">- {it.deviceName}</span>
-                                </div>
-                              </td>
-                              <td className={`py-1 px-2 border-l border-black text-center font-black ${statusColor}`}>
-                                <div className="flex flex-col items-center justify-center leading-normal">
-                                  {(() => {
-                                    const { outcome } = parseEngineerReport(it.technicalNotes || it.engineerReport || '');
-                                    return (
-                                      <span>
-                                        {statusLabel}
-                                        {outcome ? ` - ${outcome}` : ''}
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                              </td>
+                            let statusColor = 'text-amber-700';
+                            if (statusLabel === 'جاهز') statusColor = 'text-emerald-700';
+                            if (statusLabel === 'سليم') statusColor = 'text-blue-700';
+                            if (statusLabel === 'لا يصلح') statusColor = 'text-rose-700';
+                             if (statusLabel === 'عدم توفر قطع الغيار') statusColor = 'text-rose-700';
+                            if (statusLabel === 'لم يوافق') statusColor = 'text-gray-600';
+
+                            return (
+                              <tr key={idx} className="hover:bg-gray-50/50">
+                                <td className="py-1 px-2 border-l border-black text-center font-mono whitespace-nowrap overflow-hidden text-ellipsis truncate">{idx + 1}</td>
+                                <td className="py-1 px-2 border-l border-black text-right whitespace-nowrap overflow-hidden text-ellipsis truncate">
+                                  <div className="truncate max-w-[180px]" dir="rtl" title={`${it.deviceType} ${it.deviceName ? `- ${it.deviceName}` : ''}`}>
+                                    {it.deviceType} <span className="text-gray-500 text-[10px] font-normal">- {it.deviceName}</span>
+                                  </div>
+                                </td>
+                                <td className={`py-1 px-2 border-l border-black text-center font-black ${statusColor}`}>
+                                  <div className="flex flex-col items-center justify-center leading-normal">
+                                    {(() => {
+                                      const { outcome } = parseEngineerReport(it.technicalNotes || it.engineerReport || '');
+                                      return (
+                                        <span>
+                                          {statusLabel}
+                                          {isReady && outcome ? ` - ${outcome}` : ''}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                </td>
                               <td className="py-1 px-2 border-l border-black text-center font-mono whitespace-nowrap overflow-hidden text-ellipsis truncate" dir="ltr">
                                 {unitCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                               </td>
@@ -1354,7 +1400,8 @@ export default function PrintPreviewOverlay({
                               </td>
                             </tr>
                           );
-                        })}
+                        });
+                        })()}
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-100 border-t-2 border-black font-black text-xs h-9">
@@ -1397,7 +1444,10 @@ export default function PrintPreviewOverlay({
                   {/* العدادات الذكية والنشطة */}
                   {(() => {
                     const readyCount = items.filter((i: any) => getItemStatusLabel(i) === 'جاهز').reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
-                    const failedCount = items.filter((i: any) => getItemStatusLabel(i) === 'لا يصلح').reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
+                    const failedCount = items.filter((i: any) => {
+                      const statusLabel = getItemStatusLabel(i);
+                      return statusLabel === 'لا يصلح' || statusLabel === 'عدم توفر قطع الغيار';
+                    }).reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
                     const safeCount = items.filter((i: any) => getItemStatusLabel(i) === 'سليم').reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
                     const refusedCount = items.filter((i: any) => getItemStatusLabel(i) === 'لم يوافق').reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
 
@@ -1473,7 +1523,7 @@ export default function PrintPreviewOverlay({
                         <tr className="bg-gray-100 border-b-2 border-black text-black">
                           <th className="py-1.5 px-2 border-l border-black text-center w-10 font-bold">م</th>
                           <th className="py-1.5 px-2 border-l border-black text-right w-44 font-bold">النوع / الجهاز</th>
-                          <th className="py-1.5 px-2 border-l border-black text-right min-w-[120px] font-bold">الحالة - تقرير الفحص</th>
+                          <th className="py-1.5 px-2 border-l border-black text-right min-w-[120px] font-bold">الحالة - نتيجة الصيانة</th>
                           {!isPhase1 && <th className="py-1.5 px-2 border-l border-black text-center w-32 font-bold">تكلفة صيانة الجهاز</th>}
                           <th className="py-1.5 px-2 border-l border-black text-center w-16 font-bold">العدد</th>
                           {!isPhase1 && <th className="py-1.5 px-2 text-center w-28 font-bold">اجمالي التكلفة</th>}
@@ -1485,6 +1535,12 @@ export default function PrintPreviewOverlay({
                           const totalCost = Number(it.cost || 0);
                           const unitCost = qty > 0 ? totalCost / qty : totalCost;
                           const statusLabel = getItemStatus(it);
+                          const outcomeText = (() => {
+                            if (statusLabel !== 'صيانة') return '';
+                            const reportVal = it.technicalNotes || it.engineerReport || '';
+                            const { outcome } = parseEngineerReport(reportVal);
+                            return outcome || '';
+                          })();
 
                           return (
                             <tr key={idx} className="h-8 hover:bg-gray-50/50">
@@ -1496,16 +1552,7 @@ export default function PrintPreviewOverlay({
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
                                 <div className="max-w-[280px] text-emerald-800 animate-pulse-subtle leading-normal flex flex-col justify-center" dir="rtl">
-                                  {(() => {
-                                    const reportVal = it.technicalNotes || it.engineerReport || '';
-                                    const { technical, outcome } = parseEngineerReport(reportVal);
-                                    return (
-                                      <>
-                                        <span>{statusLabel} - {technical || '-'}</span>
-                                        {outcome && <span className="text-[10px] font-bold text-gray-500">{outcome}</span>}
-                                      </>
-                                    );
-                                  })()}
+                                  <span>{statusLabel}{outcomeText ? ` - ${outcomeText}` : ''}</span>
                                 </div>
                               </td>
                               {!isPhase1 && (
@@ -1619,7 +1666,7 @@ export default function PrintPreviewOverlay({
                         <tr className="bg-gray-100 border-b-2 border-black text-black">
                           <th className="py-1.5 px-2 border-l border-black text-center w-10 font-bold">م</th>
                           <th className="py-1.5 px-2 border-l border-black text-right w-44 font-bold">النوع / الجهاز</th>
-                          <th className="py-1.5 px-2 border-l border-black text-right min-w-[120px] font-bold">الحالة - تقرير الفحص</th>
+                          <th className="py-1.5 px-2 border-l border-black text-right min-w-[120px] font-bold">الحالة - نتيجة الصيانة</th>
                           <th className="py-1.5 px-2 border-l border-black text-center w-32 font-bold">تكلفة صيانة الجهاز</th>
                           <th className="py-1.5 px-2 border-l border-black text-center w-16 font-bold">العدد</th>
                           <th className="py-1.5 px-2 text-center w-28 font-bold">اجمالي التكلفة</th>
@@ -1631,6 +1678,12 @@ export default function PrintPreviewOverlay({
                           const totalCost = Number(it.cost || 0);
                           const unitCost = qty > 0 ? totalCost / qty : totalCost;
                           const statusLabel = getItemStatus(it);
+                          const outcomeText = (() => {
+                            if (statusLabel !== 'صيانة') return '';
+                            const reportVal = it.technicalNotes || it.engineerReport || '';
+                            const { outcome } = parseEngineerReport(reportVal);
+                            return outcome || '';
+                          })();
 
                           return (
                             <tr key={idx} className="h-8 hover:bg-gray-50/50">
@@ -1642,16 +1695,7 @@ export default function PrintPreviewOverlay({
                               </td>
                               <td className="py-1 px-2 border-l border-black text-right">
                                 <div className="max-w-[280px] text-emerald-800 animate-pulse-subtle leading-normal flex flex-col justify-center" dir="rtl">
-                                  {(() => {
-                                    const reportVal = it.technicalNotes || it.engineerReport || '';
-                                    const { technical, outcome } = parseEngineerReport(reportVal);
-                                    return (
-                                      <>
-                                        <span>{statusLabel} - {technical || '-'}</span>
-                                        {outcome && <span className="text-[10px] font-bold text-gray-500">{outcome}</span>}
-                                      </>
-                                    );
-                                  })()}
+                                  <span>{statusLabel}{outcomeText ? ` - ${outcomeText}` : ''}</span>
                                 </div>
                               </td>
                               <td className="py-1 px-2 border-l border-black text-center font-mono" dir="ltr">

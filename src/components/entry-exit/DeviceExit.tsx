@@ -149,7 +149,6 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [exitPaidAmount, setExitPaidAmount] = useState<number>(0);
   const [exitDiscountAmount, setExitDiscountAmount] = useState<number>(0);
-  const [exitTaxAmount, setExitTaxAmount] = useState<number>(0);
   const [activePrintData, setActivePrintData] = useState<{
     invoice: Invoice;
     items: InvoiceItem[];
@@ -245,7 +244,6 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
     // Default paid amount to 0
     setExitPaidAmount(0);
     setExitDiscountAmount(0);
-    setExitTaxAmount(0);
   };
 
   const handleToggleItem = (id: string) => {
@@ -362,8 +360,13 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
       }
       message += `\n*الأجهزة المستلمة:*\n`;
       prItems.forEach((item, index) => {
+        const rawReport = item.failureReason || item.engineerReport || '';
+        const parsed = parseEngineerReport(rawReport);
+        const displayReport = parsed.outcome || '';
+        const subStatus = getItemSubStatus(item);
+        const statusArabic = getStatusArabic(subStatus);
         message += `\n_${index + 1}. *${item.deviceType} - ${item.deviceName || ''}*_\n`;
-        message += `   • تقرير الصيانة: ${item.failureReason || item.engineerReport || '-'}\n`;
+        message += `   • نتيجة الصيانة: ${statusArabic}${subStatus === 'ready' && displayReport ? ` - ${displayReport}` : ''}\n`;
         message += `   • التكلفة: ${(item.cost || item.unitCost || 0).toLocaleString('en-US')} ${currency}\n`;
       });
       message += `\nيسعدنا خدمتكم دائمًا. شكرًا لتعاملكم معنا!`;
@@ -399,9 +402,8 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
     : 0;
 
   const subtotal = selectedCost;
-  const tax = exitTaxAmount;
   const discount = exitDiscountAmount;
-  const total = (subtotal + tax) - discount;
+  const total = subtotal - discount;
 
   const remainingCostForSelection = Math.max(0, total - exitPaidAmount);
   
@@ -414,7 +416,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
       items: printItems,
       paidAmount: exitPaidAmount,
       discountAmount: exitDiscountAmount,
-      taxAmount: exitTaxAmount,
+      taxAmount: 0,
       remainingAmount: remainingCostForSelection,
       selectedCost: selectedCost
     });
@@ -707,17 +709,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-300">
-                    {[...activePrintData.items].sort((a, b) => {
-                      const typeA = a.deviceType || '';
-                      const typeB = b.deviceType || '';
-                      const typeCompare = typeA.localeCompare(typeB, 'ar');
-                      if (typeCompare !== 0) return typeCompare;
-
-                      const nameA = a.deviceName || '';
-                      const nameB = b.deviceName || '';
-                      const nameCompare = nameA.localeCompare(nameB, 'ar');
-                      if (nameCompare !== 0) return nameCompare;
-
+                    {(() => {
                       const getConditionRank = (item: any) => {
                         const subStatus = getItemSubStatus(item);
                         if (subStatus === 'ready') return 1;
@@ -726,35 +718,60 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                         if (subStatus === 'refused') return 4;
                         return 5;
                       };
-                      return getConditionRank(a) - getConditionRank(b);
-                    }).map((item, idx) => {
-                      const itemQty = Number(item.quantity || 1);
-                      const totalItemCost = Number(item.cost || 0);
-                      const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
-                      const subStatusArabic = getStatusArabic(getItemSubStatus(item));
-                      const { outcome } = parseEngineerReport(item.engineerReport || '');
-                      
-                      return (
-                        <tr key={item.id} className="even:bg-gray-50/50">
-                          <td className="px-3 py-3 text-center font-mono font-bold border-l border-gray-400 bg-gray-50">{idx + 1}</td>
-                          <td className="px-3 py-3 font-bold text-gray-900 border-l border-gray-400 leading-relaxed whitespace-nowrap overflow-hidden max-w-[200px] text-ellipsis">
-                            {item.deviceType || '-'} {item.deviceName ? `- ${item.deviceName}` : ''}
-                          </td>
-                          <td className="px-3 py-3 text-gray-900 font-bold leading-relaxed border-l border-gray-400 whitespace-nowrap">
-                            {subStatusArabic}{outcome ? ` - ${outcome}` : ''}
-                          </td>
-                          <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
-                            {unitItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
-                          </td>
-                          <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
-                            {itemQty}
-                          </td>
-                          <td className="px-3 py-3 text-center font-mono font-black text-gray-900 bg-gray-50">
-                            {totalItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                      const typeRanks: Record<string, number> = {};
+                      const nameRanks: Record<string, number> = {};
+                      activePrintData.items.forEach(item => {
+                        const t = item.deviceType || '';
+                        const n = item.deviceName || '';
+                        const key = `${t}|${n}`;
+                        const r = getConditionRank(item);
+                        if (!(t in typeRanks) || r < typeRanks[t]) typeRanks[t] = r;
+                        if (!(key in nameRanks) || r < nameRanks[key]) nameRanks[key] = r;
+                      });
+
+                      return [...activePrintData.items].sort((a, b) => {
+                        const tA = a.deviceType || '';
+                        const tB = b.deviceType || '';
+                        if (typeRanks[tA] !== typeRanks[tB]) return typeRanks[tA] - typeRanks[tB];
+                        if (tA !== tB) return tA.localeCompare(tB, 'ar');
+                        
+                        const nA = a.deviceName || '';
+                        const nB = b.deviceName || '';
+                        const keyA = `${tA}|${nA}`;
+                        const keyB = `${tB}|${nB}`;
+                        if (nameRanks[keyA] !== nameRanks[keyB]) return nameRanks[keyA] - nameRanks[keyB];
+                        if (nA !== nB) return nA.localeCompare(nB, 'ar');
+                        
+                        return getConditionRank(a) - getConditionRank(b);
+                      }).map((item, idx) => {
+                        const itemQty = Number(item.quantity || 1);
+                        const totalItemCost = Number(item.cost || 0);
+                        const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
+                        const subStatusArabic = getStatusArabic(getItemSubStatus(item));
+                        const { outcome } = parseEngineerReport(item.engineerReport || '');
+                        
+                        return (
+                          <tr key={item.id} className="even:bg-gray-50/50">
+                            <td className="px-3 py-3 text-center font-mono font-bold border-l border-gray-400 bg-gray-50">{idx + 1}</td>
+                            <td className="px-3 py-3 font-bold text-gray-900 border-l border-gray-400 leading-relaxed whitespace-nowrap overflow-hidden max-w-[200px] text-ellipsis">
+                              {item.deviceType || '-'} {item.deviceName ? `- ${item.deviceName}` : ''}
+                            </td>
+                            <td className="px-3 py-3 text-gray-900 font-bold leading-relaxed border-l border-gray-400 whitespace-nowrap">
+                              {subStatusArabic}{subStatusArabic === 'جاهز' && outcome ? ` - ${outcome}` : ''}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
+                              {unitItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-900 border-l border-gray-400">
+                              {itemQty}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono font-black text-gray-900 bg-gray-50">
+                              {totalItemCost.toLocaleString('en-US')} <span className="text-[10px] font-sans mr-0.5">{selectedInvoice.currency || 'USD'}</span>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                     {/* Last rows for totals */}
                     <tr className="bg-gray-200/60 font-bold border-t-2 border-gray-400">
                       <td colSpan={4} className="px-3 py-4 text-left font-black border-l border-gray-400 text-base">إجمالى عدد الأجهزة ومبلغ الفاتورة</td>
@@ -1002,7 +1019,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5 text-gray-300">
-                      {[...invoiceItems].sort((a, b) => {
+                      {(() => {
                         const getConditionRank = (item: any) => {
                           const subStatus = getItemSubStatus(item);
                           if (subStatus === 'ready') return 1;
@@ -1011,30 +1028,54 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                           if (subStatus === 'refused') return 4;
                           return 5;
                         };
-                        return getConditionRank(a) - getConditionRank(b);
-                      }).map((item, idx) => {
-                        const subStatus = getItemSubStatus(item);
-                        const isSelected = selectedItemIds.has(item.id!);
-                        
-                        const itemQty = Number(item.quantity || 1);
-                        const totalItemCost = Number(item.cost || 0);
-                        const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
-                        
-                        const getReportTypeArabic = (itemData: typeof item, statusStr: string) => {
-                          if (statusStr === 'intact') return 'تقرير الفحص';
-                          if (statusStr === 'unrepairable') {
-                            return itemData.source === 'inspection' ? 'تقرير الفحص' : 'تقرير الصيانة';
-                          }
-                          if (statusStr === 'ready') return 'تقرير الصيانة';
-                          if (statusStr === 'refused' || statusStr === 'cancelled') return 'تقرير رد العميل';
-                          return 'تقرير الصيانة';
+                        const typeRanks: Record<string, number> = {};
+                        const nameRanks: Record<string, number> = {};
+                        invoiceItems.forEach(item => {
+                          const t = item.deviceType || '';
+                          const n = item.deviceName || '';
+                          const key = `${t}|${n}`;
+                          const r = getConditionRank(item);
+                          if (!(t in typeRanks) || r < typeRanks[t]) typeRanks[t] = r;
+                          if (!(key in nameRanks) || r < nameRanks[key]) nameRanks[key] = r;
+                        });
+
+                        return [...invoiceItems].sort((a, b) => {
+                          const tA = a.deviceType || '';
+                          const tB = b.deviceType || '';
+                          if (typeRanks[tA] !== typeRanks[tB]) return typeRanks[tA] - typeRanks[tB];
+                          if (tA !== tB) return tA.localeCompare(tB, 'ar');
+                          
+                          const nA = a.deviceName || '';
+                          const nB = b.deviceName || '';
+                          const keyA = `${tA}|${nA}`;
+                          const keyB = `${tB}|${nB}`;
+                          if (nameRanks[keyA] !== nameRanks[keyB]) return nameRanks[keyA] - nameRanks[keyB];
+                          if (nA !== nB) return nA.localeCompare(nB, 'ar');
+                          
+                          return getConditionRank(a) - getConditionRank(b);
+                        }).map((item, idx) => {
+                          const subStatus = getItemSubStatus(item);
+                          const isSelected = selectedItemIds.has(item.id!);
+                          
+                          const itemQty = Number(item.quantity || 1);
+                          const totalItemCost = Number(item.cost || 0);
+                          const unitItemCost = item.unitCost || (itemQty > 0 ? totalItemCost / itemQty : 0);
+                          
+                          const getReportTypeArabic = (itemData: typeof item, statusStr: string) => {
+                            if (statusStr === 'intact') return 'تقرير الفحص';
+                            if (statusStr === 'unrepairable') {
+                              return itemData.source === 'inspection' ? 'تقرير الفحص' : 'تقرير الصيانة';
+                            }
+                            if (statusStr === 'ready') return 'تقرير الصيانة';
+                            if (statusStr === 'refused' || statusStr === 'cancelled') return 'تقرير رد العميل';
+                            return 'تقرير الصيانة';
                         };
 
                         const reportTypeArabic = getReportTypeArabic(item, subStatus);
                         
-                        const reportText = (subStatus === 'unrepairable' && item.source === 'inspection') 
-                          ? (item.engineerReport || 'لا يوجد') 
-                          : (item.failureReason || item.engineerReport || 'لا يوجد');
+                        const subStatusArabic = getStatusArabic(subStatus);
+                        const parsedReport = parseEngineerReport(item.failureReason || item.engineerReport || '');
+                        const reportText = `${subStatusArabic}${subStatus === 'ready' && parsedReport.outcome ? ` - ${parsedReport.outcome}` : ''}`;
 
                         const reportTypeBadgeClass = 
                           reportTypeArabic === 'تقرير الفحص' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
@@ -1105,7 +1146,8 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                             </td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1114,136 +1156,113 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
               {/* Interactive calculations block adjacent to exit action */}
               <div className="pt-2 mt-2 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-3 flex-shrink-0">
                 {/* Financial panel on the right (RTL) */}
-                <div className="flex flex-wrap items-center gap-4 justify-between w-full md:w-auto md:justify-start">
-                  
-                  {/* 1. Output devices total cost (Subtotal) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">المجموع الفرعي</p>
-                    <p className="text-sm font-black font-mono text-gray-300 text-right w-full">
-                      {subtotal.toFixed(2)} <span className="text-xs text-gray-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
-                    </p>
-                  </div>
+                <div className="flex flex-col gap-2.5 w-full md:w-auto">
+                  {/* Top row: اجمالي الفاتورة، المبلغ المستحق */}
+                  <div className="flex flex-wrap items-center gap-4 justify-between md:justify-start">
+                    {/* 1. Invoice Total (اجمالي الفاتورة) */}
+                    <div className="text-right">
+                      <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">اجمالي الفاتورة</p>
+                      <p className="text-sm font-black font-mono text-gray-300 text-right w-full">
+                        {subtotal.toFixed(2)} <span className="text-xs text-gray-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                      </p>
+                    </div>
 
-                  {/* Vertical Separator */}
-                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+                    {/* Vertical Separator */}
+                    <div className="hidden sm:block w-px h-6 bg-white/10" />
 
-                  {/* 1.5 Tax Amount (الضريبة) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-blue-400 uppercase font-black tracking-widest block mb-0.5">مبلغ الضريبة</p>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        lang="en"
-                        value={exitTaxAmount || ''}
-                        onFocus={e => e.target.select()}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, '');
-                          const parts = val.split('.');
-                          if (parts.length > 2) return;
-                          let num = parseFloat(val);
-                          if (isNaN(num)) num = 0;
-                          console.log("exitTaxAmount changed", num);
-                          setExitTaxAmount(num);
-                        }}
-                        className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center text-blue-400 focus:border-blue-500"
-                        placeholder="0"
-                      />
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
-                        {selectedInvoice.currency || 'USD'}
-                      </span>
+                    {/* 2. Amount Due (المبلغ المستحق) */}
+                    <div className="text-right">
+                      <p className="text-[10px] text-purple-400 uppercase font-black tracking-widest block mb-0.5">المبلغ المستحق</p>
+                      <p className="text-sm font-black font-mono text-purple-300 text-right w-full">
+                        {total.toFixed(2)} <span className="text-xs text-purple-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Vertical Separator */}
-                  <div className="hidden sm:block w-px h-6 bg-white/10" />
+                  {/* Divider line between rows */}
+                  <div className="h-px bg-white/5 w-full" />
 
-                  {/* 2. Discount Amount (مبلغ الخصم) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-amber-500 uppercase font-black tracking-widest block mb-0.5">مبلغ الخصم</p>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        lang="en"
-                        value={exitDiscountAmount || ''}
-                        onFocus={e => e.target.select()}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, '');
-                          const parts = val.split('.');
-                          if (parts.length > 2) return;
-                          let num = parseFloat(val);
-                          if (isNaN(num)) num = 0;
-                          console.log("exitDiscountAmount changed", num);
-                          setExitDiscountAmount(num);
-                        }}
-                        className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center text-amber-400 focus:border-amber-500"
-                        placeholder="0"
-                      />
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
-                        {selectedInvoice.currency || 'USD'}
-                      </span>
+                  {/* Bottom row: الخصم، المبلغ الواصل، المبلغ المتبقي */}
+                  <div className="flex flex-wrap items-center gap-4 justify-between md:justify-start">
+                    {/* 1. Discount (الخصم) */}
+                    <div className="text-right">
+                      <p className="text-[10px] text-amber-500 uppercase font-black tracking-widest block mb-0.5">الخصم</p>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
+                          lang="en"
+                          value={exitDiscountAmount || ''}
+                          onFocus={e => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, '');
+                            const parts = val.split('.');
+                            if (parts.length > 2) return;
+                            let num = parseFloat(val);
+                            if (isNaN(num)) num = 0;
+                            console.log("exitDiscountAmount changed", num);
+                            setExitDiscountAmount(num);
+                          }}
+                          className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center text-amber-400 focus:border-amber-500"
+                          placeholder="0"
+                        />
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
+                          {selectedInvoice.currency || 'USD'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Vertical Separator */}
+                    <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                    {/* 2. Amount received / paid (المبلغ الواصل) - Emphasized & Enlarged */}
+                    <div className="text-right">
+                      <p className="text-[10px] text-emerald-400 uppercase font-black tracking-widest block mb-1 flex items-center gap-1 justify-end">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        المبلغ الواصل
+                      </p>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
+                          lang="en"
+                          value={exitPaidAmount || ''}
+                          onFocus={e => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, '');
+                            const parts = val.split('.');
+                            if (parts.length > 2) return;
+                            let num = parseFloat(val);
+                            if (isNaN(num)) num = 0;
+                            console.log("exitPaidAmount changed", num);
+                            setExitPaidAmount(num);
+                          }}
+                          className={`w-28 h-9 bg-emerald-950/30 border rounded-lg px-3 py-1.5 text-sm font-black focus:outline-none transition-all pl-8 font-mono text-center shadow-md ${
+                            exitPaidAmount > total 
+                              ? "border-rose-500 text-rose-400 focus:border-rose-500 bg-rose-500/10 focus:ring-1 focus:ring-rose-500 shadow-rose-500/10" 
+                              : "border-emerald-500/45 text-emerald-400 focus:border-emerald-500 bg-emerald-950/20 focus:ring-1 focus:ring-emerald-500 shadow-emerald-500/10"
+                          }`}
+                          placeholder="0"
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-emerald-500/70 font-bold font-mono">
+                          {selectedInvoice.currency || 'USD'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Vertical Separator */}
+                    <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                    {/* 3. New Remaining Balance (المبلغ المتبقي) */}
+                    <div className="text-right">
+                      <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">المبلغ المتبقي</p>
+                      <p className={`text-sm font-black font-mono ${remainingCostForSelection > 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
+                        {remainingCostForSelection.toFixed(2)} <span className="text-xs text-gray-500 font-sans">{selectedInvoice.currency || 'USD'}</span>
+                      </p>
                     </div>
                   </div>
-
-                  {/* Vertical Separator */}
-                  <div className="hidden sm:block w-px h-6 bg-white/10" />
-
-                  {/* 2.5 Total Cost (الإجمالي النهائي) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-purple-400 uppercase font-black tracking-widest block mb-0.5">الإجمالي النهائي</p>
-                    <p className="text-sm font-black font-mono text-purple-300 text-right w-full">
-                      {total.toFixed(2)} <span className="text-xs text-purple-400 font-sans">{selectedInvoice.currency || 'USD'}</span>
-                    </p>
-                  </div>
-
-                  {/* Vertical Separator */}
-                  <div className="hidden sm:block w-px h-6 bg-white/10" />
-
-                  {/* 3. Amount received / paid (المبلغ الواصل) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-emerald-400 uppercase font-black tracking-widest block mb-0.5">المبلغ الواصل</p>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        dir="ltr"
-                        lang="en"
-                        value={exitPaidAmount || ''}
-                        onFocus={e => e.target.select()}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, '');
-                          const parts = val.split('.');
-                          if (parts.length > 2) return;
-                          let num = parseFloat(val);
-                          if (isNaN(num)) num = 0;
-                          console.log("exitPaidAmount changed", num);
-                          setExitPaidAmount(num);
-                        }}
-                        className={`w-16 bg-black/40 border rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-all pl-7 font-mono text-center ${
-                          exitPaidAmount > total ? "border-rose-500 text-rose-400 focus:border-rose-500 bg-rose-500/5" : "border-white/10 text-emerald-400 focus:border-emerald-500"
-                        }`}
-                        placeholder="0"
-                      />
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-500 font-bold font-mono">
-                        {selectedInvoice.currency || 'USD'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Vertical Separator */}
-                  <div className="hidden sm:block w-px h-6 bg-white/10" />
-
-                  {/* 3.5 New Remaining Balance (المبلغ المتبقي) */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-0.5">المبلغ المتبقي</p>
-                    <p className={`text-sm font-black font-mono ${remainingCostForSelection > 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                      {remainingCostForSelection.toFixed(2)} <span className="text-xs text-gray-500 font-sans">{selectedInvoice.currency || 'USD'}</span>
-                    </p>
-                  </div>
-
                 </div>
 
                 {/* Action Button & Metadata */}
