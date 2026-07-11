@@ -53,7 +53,7 @@ import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
 import { sanitizeDocumentStyles, sanitizeElementInlineStyles, cleanOklchInStyleText } from '../lib/html2canvasHelper';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { doc, getDoc, db, setDoc, collection, addDoc } from '../firebase';
+import { doc, getDoc, db, setDoc, collection, addDoc, parseDateSafe } from '../firebase';
 
 interface VaultTransaction {
   id: string;
@@ -77,6 +77,12 @@ interface VaultTransaction {
   isReversal?: number | boolean;
   reversalOf?: string;
   status?: string;
+  paymentType?: number;
+  liabilityCurrency?: string;
+  liabilityAmount?: number;
+  receiptCurrency?: string;
+  receiptAmount?: number;
+  bankDetails?: string;
 }
 
 interface FinFund {
@@ -197,6 +203,39 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   const [invoices, setInvoices] = useState<DB_Invoice[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<VaultTransaction[]>([]);
+  const [reversalConfirmTx, setReversalConfirmTx] = useState<VaultTransaction | null>(null);
+
+  const formatVoucherDate = (dateVal: any) => {
+    const d = parseDateSafe(dateVal);
+    if (!d || isNaN(d.getTime())) return '---';
+    try {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      let hours = d.getHours();
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'م' : 'ص';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      const hoursStr = String(hours).padStart(2, '0');
+      return `${year}/${month}/${day} ${hoursStr}:${minutes} ${ampm}`;
+    } catch (e) {
+      return '---';
+    }
+  };
+
+  const formatVoucherDateOnly = (dateVal: any) => {
+    const d = parseDateSafe(dateVal);
+    if (!d || isNaN(d.getTime())) return '---';
+    try {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}/${month}/${day}`;
+    } catch (e) {
+      return '---';
+    }
+  };
 
   // LEDGER CUSTOMER MATH & HELPERS
   const getInvoiceItemsForInvoice = (invoiceNumber: string) => {
@@ -250,6 +289,11 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // VOUCHER FORM STATES (Shared structure)
+  const [voucherDate, setVoucherDate] = useState<string>(() => {
+    const localDate = new Date();
+    const tzOffset = localDate.getTimezoneOffset() * 60000;
+    return new Date(localDate.getTime() - tzOffset).toISOString().slice(0, 16);
+  });
   const [nextVoucherNum, setNextVoucherNum] = useState<number>(1001);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [customerSearch, setCustomerSearch] = useState<string>('');
@@ -261,6 +305,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   const [selectedFundId, setSelectedFundId] = useState<string>('');
   const [referenceNumber, setReferenceNumber] = useState<string>('');
   const [depositorName, setDepositorName] = useState<string>('');
+  const [paymentMode, setPaymentMode] = useState<'unified' | 'different'>('unified');
+  const [liabilityCurrency, setLiabilityCurrency] = useState<string>('USD');
+  const [liabilityAmount, setLiabilityAmount] = useState<string>('');
 
   // TRANSFER TAB STATES
   const [transferSourceFundId, setTransferSourceFundId] = useState<string>('');
@@ -401,6 +448,14 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     if (!voucherAmount || !voucherAmount.trim()) return false;
     const amountVal = parseFloat(voucherAmount);
     if (isNaN(amountVal) || amountVal <= 0) return false;
+    
+    if (paymentMode === 'different') {
+      if (!liabilityAmount || !liabilityAmount.trim()) return false;
+      const liabVal = parseFloat(liabilityAmount);
+      if (isNaN(liabVal) || liabVal <= 0) return false;
+      if (!liabilityCurrency) return false;
+    }
+
     if (!customerSearch || !customerSearch.trim()) return false;
     if (!selectedCategory || !selectedCategory.trim()) return false;
     if (!voucherNotes || !voucherNotes.trim()) return false;
@@ -591,7 +646,13 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       }
 
       const txId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
-      const timestampIso = new Date().toISOString();
+      const customDate = voucherDate ? new Date(voucherDate) : new Date();
+      const timestampIso = customDate.toISOString();
+      const timestampMs = customDate.getTime();
+
+      const finalLiabilityCurrency = paymentMode === 'unified' ? selectedCurrency : liabilityCurrency;
+      const finalLiabilityAmount = paymentMode === 'unified' ? parsedAmount : Number(liabilityAmount);
+      const finalPaymentType = paymentMode === 'unified' ? 1 : 2;
 
       // 1. Insert into database
       await localDb.run(
@@ -599,8 +660,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
           id, currency, amount, customerName, invoiceNumber, 
           userName, userNumber, userId, timestamp, type, 
           notes, updatedAt, voucherNumber, transactionCategory, 
-          fundId, fundName, customerId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          fundId, fundName, customerId, isReversed, isReversal, reversalOf,
+          paymentType, liabilityCurrency, liabilityAmount, receiptCurrency, receiptAmount, bankDetails
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, ?, ?)`,
         [
           txId,
           selectedCurrency, // The currency of the voucher
@@ -620,7 +682,13 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
           selectedCategory,
           matchedFund.id,
           matchedFund.name,
-          selectedCustomerId || ''
+          selectedCustomerId || '',
+          finalPaymentType,
+          finalLiabilityCurrency,
+          finalLiabilityAmount,
+          selectedCurrency, // Receipt Currency
+          parsedAmount,     // Receipt Amount
+          matchedFund.type !== 'cash' ? JSON.stringify({ referenceNumber: referenceNumber.trim(), depositorName: depositorName.trim() }) : ''
         ]
       );
 
@@ -630,6 +698,38 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
         "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
         [balanceAdjustment, matchedFund.id]
       );
+
+      // Add to firestore
+      await setDoc(doc(db, 'vault_transactions', txId), {
+        id: txId,
+        currency: selectedCurrency,
+        amount: isReceipt ? parsedAmount : -parsedAmount,
+        customerName: customerSearch.trim() || 'جهة عامة أخرى',
+        invoiceNumber: '',
+        userName: user.name || 'المدير العام',
+        userNumber: user.userNumber || 1,
+        userId: user.id || 'none',
+        timestamp: timestampMs,
+        type: isReceipt ? 'receipt' : 'payment',
+        notes: matchedFund.type !== 'cash' 
+          ? `رقم المرجع: ${referenceNumber.trim()} | المودع: ${depositorName.trim()} | الملاحظات: ${voucherNotes.trim()}` 
+          : voucherNotes.trim(),
+        updatedAt: timestampIso,
+        voucherNumber: nextVoucherNum,
+        transactionCategory: selectedCategory,
+        fundId: matchedFund.id,
+        fundName: matchedFund.name,
+        customerId: selectedCustomerId || '',
+        isReversed: 0,
+        isReversal: 0,
+        reversalOf: '',
+        paymentType: finalPaymentType,
+        liabilityCurrency: finalLiabilityCurrency,
+        liabilityAmount: finalLiabilityAmount,
+        receiptCurrency: selectedCurrency,
+        receiptAmount: parsedAmount,
+        bankDetails: matchedFund.type !== 'cash' ? JSON.stringify({ referenceNumber: referenceNumber.trim(), depositorName: depositorName.trim() }) : ''
+      });
 
       // Successfully processed
       setSuccessMsg(`تم ترحيل السند رقم (${nextVoucherNum}) بنجاح وتحديث الصناديق المال.`);
@@ -645,6 +745,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       setReferenceNumber('');
       setDepositorName('');
       setShowPrintPreview(false);
+      const localDate = new Date();
+      const tzOffset = localDate.getTimezoneOffset() * 60000;
+      setVoucherDate(new Date(localDate.getTime() - tzOffset).toISOString().slice(0, 16));
       
       // Reload everything
       await loadDatabaseData();
@@ -783,7 +886,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     if (isPosting) return;
     
     // Check permissions
-    if (user.role !== 'admin' && user.role !== 'manager') {
+    if (user.role !== 'admin' && user.role !== 'manager' && !canEdit) {
       setErrorMsg('عذراً، فقط مدراء النظام المخولين لديهم صلاحية عكس القيد');
       return;
     }
@@ -792,9 +895,6 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       setErrorMsg('هذا القيد معكوس بالفعل أو أنه قيد عكسي ولا يمكن عكسه مجدداً');
       return;
     }
-
-    const confirmAction = window.confirm(`هل أنت متأكد من عكس القيد رقم ${tx.voucherNumber} بقيمة ${Math.abs(tx.amount)} ${tx.currency}؟`);
-    if (!confirmAction) return;
 
     setIsPosting(true);
     try {
@@ -1013,13 +1113,13 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
         
         let lastActivity: Date | null = null;
         invsForCurr.forEach(inv => {
-          const d = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now());
+          const d = parseDateSafe(inv.createdAt) || new Date();
           if (!lastActivity || d > lastActivity) {
             lastActivity = d;
           }
         });
         txsForCurr.forEach(tx => {
-          const d = tx.timestamp?.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp || Date.now());
+          const d = parseDateSafe(tx.timestamp) || new Date();
           if (!lastActivity || d > lastActivity) {
             lastActivity = d;
           }
@@ -1089,7 +1189,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       // Merge debit (invoice cost) and credit (amount paid on it) into a single row
       entries.push({
         id: `inv-${inv.id}`,
-        date: inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now()),
+        date: parseDateSafe(inv.createdAt) || new Date(),
         type: 'فاتورة صيانة',
         label: 'فاتورة صيانة أجهزة فنية',
         reference: String(inv.invoiceNumber).replace(/#/g, ''),
@@ -1100,21 +1200,49 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     });
 
     // 2. Get separate receipts and payments
-    const customerTransactions = transactions.filter(tx => tx.customerId === customerId && (tx.currency || 'USD') === currency);
+    const customerTransactions = transactions.filter(tx => 
+      tx.customerId === customerId && 
+      (tx.liabilityCurrency || tx.currency || 'USD') === currency &&
+      !tx.isReversed &&
+      !tx.isReversal &&
+      tx.status !== 'reversed' &&
+      tx.status !== 'reversal'
+    );
     customerTransactions.forEach(tx => {
-      const txDate = tx.timestamp?.toDate ? tx.timestamp.toDate() : (tx.timestamp ? new Date(tx.timestamp) : new Date());
+      const txDate = parseDateSafe(tx.timestamp) || new Date();
       if (tx.type === 'receipt') {
+        const isLinkedToInvoice = !!tx.invoiceNumber;
+        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
+        
+        let docType = 'سند قبض';
+        let statement = tx.transactionCategory || 'دفعه تحت الحساب';
+        let details = tx.notes || '';
+        let refStr = String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, '');
+
+        if (isLinkedToInvoice) {
+           docType = 'سداد فاتورة';
+           statement = `سداد في فاتورة رقم ${tx.invoiceNumber}`;
+           refStr = `${tx.invoiceNumber}${tx.voucherNumber || '100'}`;
+        } else if (tx.transactionCategory === 'دفعة أجهزة') {
+           docType = 'سداد فاتورة';
+           statement = `سداد في فاتورة رقم ${tx.invoiceNumber || '؟'}`;
+           if (tx.invoiceNumber) {
+             refStr = `${tx.invoiceNumber}${tx.voucherNumber || '100'}`;
+           }
+        }
+
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
-          type: 'سند قبض',
-          label: tx.transactionCategory || tx.notes || 'سند قبض مالي مستقل',
-          reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
-          notes: tx.notes || 'قبض نقدي تحت الحساب',
+          type: docType,
+          label: statement,
+          reference: refStr,
+          notes: details,
           debit: 0,
-          credit: Math.abs(Number(tx.amount || 0))
+          credit: liabilityAmount
         });
       } else if (tx.type === 'payment') {
+        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
@@ -1122,7 +1250,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
           label: tx.transactionCategory || tx.notes || 'سند صرف للعميل مستقل',
           reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
           notes: tx.notes || 'صرف مالي أو استرجاع نقدي',
-          debit: Math.abs(Number(tx.amount || 0)),
+          debit: liabilityAmount,
           credit: 0
         });
       }
@@ -1694,7 +1822,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                         .filter(tx => {
                           if (!globalSearch) return true;
                           const searchLower = globalSearch.toLowerCase();
-                          return tx.customerName.toLowerCase().includes(searchLower) || tx.voucherNumber.toString().includes(searchLower);
+                          const custName = (tx.customerName || '').toLowerCase();
+                          const vNum = (tx.voucherNumber || '').toString();
+                          return custName.includes(searchLower) || vNum.includes(searchLower);
                         })
                         .map(tx => (
                           <tr key={tx.id} className="hover:bg-white/5 bg-[#141414] transition-all group">
@@ -1717,9 +1847,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                 <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20" title={tx.notes}>
                                   قيد عكسي
                                 </span>
-                              ) : (user.role === 'admin' || user.role === 'manager') ? (
+                              ) : (user.role === 'admin' || user.role === 'manager' || canEdit) ? (
                                 <button
-                                  onClick={() => handleReverseEntry(tx)}
+                                  onClick={() => setReversalConfirmTx(tx)}
                                   className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500 hover:bg-amber-600 hover:text-white border border-amber-500/20 transition-all cursor-pointer"
                                 >
                                   عكس القيد
@@ -1729,7 +1859,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-left text-gray-500 font-mono italic">
-                              {new Date(tx.timestamp).toLocaleString('ar-YE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              {formatVoucherDate(tx.timestamp)}
                             </td>
                           </tr>
                         ))}
@@ -1822,7 +1952,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                     <div id="print-area" className="p-8 bg-white text-gray-900 print:p-0 print:bg-white print:text-black w-[794px] min-h-fit mx-auto flex flex-col relative shrink-0 font-cairo text-right" dir="rtl">
                       {/* Faint print date and time watermark */}
                       <div className="absolute left-8 top-3 text-[8px] text-gray-400 font-normal select-none opacity-45 font-mono pointer-events-none" dir="rtl">
-                        تاريخ ووقت الطباعة: {new Date().toLocaleDateString('ar-YE')} {new Date().toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' })}
+                        تاريخ ووقت الطباعة: {formatVoucherDate(new Date())}
                       </div>
                       {/* Header Box identical format to device inspection report */}
                       <div className="flex justify-between items-start border-b-2 border-gray-900 pb-4 mb-6">
@@ -1879,7 +2009,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                           </div>
                           <div className="text-sm font-bold text-gray-700 flex justify-between gap-4">
                             <span>التاريخ:</span>
-                            <span className="font-mono text-gray-900">{new Date().toLocaleDateString('ar-YE', { year: 'numeric', month: 'numeric', day: 'numeric' })}</span>
+                            <span className="font-mono text-gray-900">{formatVoucherDateOnly(new Date())}</span>
                           </div>
                           <div className="text-sm font-bold text-gray-700 flex justify-between gap-4">
                             <span>وقت الإصدار:</span>
@@ -2034,6 +2164,24 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                     </div>
                   </div>
 
+                  {/* Payment Mode Selector */}
+                  <div className="flex bg-[#1a1a1a] p-1 rounded-xl border border-white/5 mx-auto max-w-sm font-cairo">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('unified')}
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${paymentMode === 'unified' ? 'bg-amber-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      عملة موحدة
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('different')}
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${paymentMode === 'different' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      عملة مختلفة
+                    </button>
+                  </div>
+
                    {/* FORM BODY - Super compact styled elements */}
                   <div className="max-w-xl mx-auto bg-[#141414] border border-white/5 rounded-2xl p-3.5 space-y-1.5 font-cairo">
                      
@@ -2061,6 +2209,53 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                            })}
                         </select>
                      </div>
+
+                     {/* Liability Fields for Different Currency */}
+                     {paymentMode === 'different' && (
+                       <>
+                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 py-1 border-b border-white/5">
+                           <label className="text-[11px] font-bold text-gray-400 min-w-[120px]">
+                             عملة الذمة (الحساب):
+                           </label>
+                           <select 
+                             value={liabilityCurrency}
+                             onChange={(e) => setLiabilityCurrency(e.target.value)}
+                             className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-blue-500/50 text-right appearance-none font-semibold"
+                             required
+                           >
+                              {currencies.map(c => (
+                                <option key={c.id} value={c.name} className="bg-[#1c1c1c]">
+                                  {`${c.name} - ${c.symbol}`}
+                                </option>
+                              ))}
+                           </select>
+                         </div>
+                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 py-1 border-b border-white/5">
+                           <label className="text-[11px] font-bold text-gray-400 min-w-[120px]">
+                             المبلغ المسدد في الذمة:
+                           </label>
+                           <div className="flex-1 max-w-xs relative text-right">
+                              <input 
+                                type="text"
+                                inputMode="decimal"
+                                dir="ltr"
+                                lang="en"
+                                onFocus={e => e.target.select()}
+                                placeholder="0.00"
+                                value={liabilityAmount}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[^0-9.]/g, '');
+                                  if (val.split('.').length > 2) return;
+                                  setLiabilityAmount(val);
+                                }}
+                                className="w-full bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-blue-400 font-bold font-mono outline-none focus:border-blue-500/50 placeholder:text-gray-800 text-left"
+                                required
+                              />
+                              <span className="absolute right-3 top-1 text-[9px] text-gray-500 font-bold">{liabilityCurrency}</span>
+                           </div>
+                         </div>
+                       </>
+                     )}
 
                      {/* Layout switches depending on whether selected fund is CASH or BANK */}
                      {(() => {
@@ -2178,6 +2373,20 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                       ))
                                     }
                                  </select>
+                              </div>
+
+                              {/* Row: تاريخ السند */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 py-1 border-b border-white/5">
+                                 <label className="text-[11px] font-bold text-gray-400 min-w-[120px]">
+                                   تاريخ ووقت القيد:
+                                 </label>
+                                 <input 
+                                   type="datetime-local"
+                                   value={voucherDate}
+                                   onChange={(e) => setVoucherDate(e.target.value)}
+                                   className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 font-sans"
+                                   required
+                                 />
                               </div>
 
                               {/* Row 6: ملاحظات السند */}
@@ -2338,6 +2547,20 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                       ))
                                     }
                                  </select>
+                              </div>
+
+                              {/* Row: تاريخ السند */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 py-1 border-b border-white/5">
+                                 <label className="text-[11px] font-bold text-gray-400 min-w-[120px]">
+                                   تاريخ ووقت القيد:
+                                 </label>
+                                 <input 
+                                   type="datetime-local"
+                                   value={voucherDate}
+                                   onChange={(e) => setVoucherDate(e.target.value)}
+                                   className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 font-sans"
+                                   required
+                                 />
                               </div>
 
                               {/* Row 7: ملاحظات السند */}
@@ -2593,9 +2816,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                       {currentVaultTransactions.map(tx => (
                         <tr key={tx.id} className="hover:bg-white/5 bg-[#141414] transition-colors">
                           <td className="px-4 py-3 font-bold text-gray-300">{tx.fundName || 'غير معروف'}</td>
-                          <td className="px-4 py-3 text-gray-500 font-mono">
-                            {tx.timestamp ? new Date(tx.timestamp).toLocaleDateString('ar-YE') : '---'}
-                          </td>
+                           <td className="px-4 py-3 text-gray-500 font-mono">
+                             {formatVoucherDate(tx.timestamp)}
+                           </td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${tx.type === 'receipt' ? 'bg-green-600/15 text-green-400' : 'bg-amber-600/15 text-amber-500'}`}>
                               {tx.type === 'receipt' ? 'إيداع' : 'سحب'}
@@ -2844,7 +3067,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                               <td className="py-2 sm:py-3 px-2 sm:px-4 text-right font-cairo text-xs text-gray-400 hidden lg:table-cell">
                                 {stat.lastActivityDate ? (
                                   <span className="font-mono text-[11px] text-gray-300 font-bold block truncate">
-                                    {stat.lastActivityDate.toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                                    {formatVoucherDateOnly(stat.lastActivityDate)}
                                   </span>
                                 ) : (
                                   <span className="text-gray-600 font-bold text-[10px] truncate">بدون حركة</span>
@@ -2978,7 +3201,12 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                           {receiptTransactions.map(tx => (
                             <tr key={tx.id} className="hover:bg-white/5 transition-colors">
                               <td className="py-2 px-3 text-white font-bold">{tx.voucherNumber}</td>
-                              <td className="py-2 px-3 font-sans text-[10px] text-gray-500">{new Date(tx.timestamp?.toDate ? tx.timestamp.toDate() : tx.timestamp).toLocaleString('en-US')}</td>
+                              <td className="py-2 px-3 font-sans text-[10px] text-gray-500">
+                                {(() => {
+                                  const d = parseDateSafe(tx.timestamp);
+                                  return d && !isNaN(d.getTime()) ? d.toLocaleString('en-US') : '---';
+                                })()}
+                              </td>
                               <td className="py-2 px-3 text-emerald-400 font-cairo">{tx.transactionCategory}</td>
                               <td className="py-2 px-3 font-cairo text-gray-400">{tx.customerName}</td>
                               <td className="py-2 px-3 font-cairo text-gray-400">{tx.fundName}</td>
@@ -3032,7 +3260,12 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                           {paymentTransactions.map(tx => (
                             <tr key={tx.id} className="hover:bg-white/5 transition-colors">
                               <td className="py-2 px-3 text-white font-bold">{tx.voucherNumber}</td>
-                              <td className="py-2 px-3 font-sans text-[10px] text-gray-500">{new Date(tx.timestamp?.toDate ? tx.timestamp.toDate() : tx.timestamp).toLocaleString('en-US')}</td>
+                              <td className="py-2 px-3 font-sans text-[10px] text-gray-500">
+                                {(() => {
+                                  const d = parseDateSafe(tx.timestamp);
+                                  return d && !isNaN(d.getTime()) ? d.toLocaleString('en-US') : '---';
+                                })()}
+                              </td>
                               <td className="py-2 px-3 text-amber-500 font-cairo">{tx.transactionCategory}</td>
                               <td className="py-2 px-3 font-cairo text-gray-400">{tx.customerName}</td>
                               <td className="py-2 px-3 font-cairo text-gray-400">{tx.fundName}</td>
@@ -3312,7 +3545,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                 <td className="py-2.5 px-3 text-white font-bold">#{inv.invoiceNumber}</td>
                                 <td className="py-2.5 px-3 text-gray-400">
                                   {inv.createdAt
-                                    ? new Date(inv.createdAt).toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                                    ? formatVoucherDateOnly(inv.createdAt)
                                     : '---'}
                                 </td>
                                 <td className="py-2.5 px-3">{actualCost?.toLocaleString('en-US')} {inv.currency}</td>
@@ -3374,9 +3607,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                               <span className="text-[10px] text-purple-400 font-cairo">({tx.transactionCategory})</span>
                             </div>
                             <p className="text-[10px] text-gray-400 font-cairo leading-relaxed">{tx.notes || 'سند مالي مستحق على الدفاتر.'}</p>
-                            <span className="text-[9px] text-gray-600 font-mono">
-                              {new Date(tx.timestamp?.toDate ? tx.timestamp.toDate() : tx.timestamp).toLocaleString('ar-YE')}
-                            </span>
+                             <span className="text-[9px] text-gray-600 font-mono">
+                               {formatVoucherDate(tx.timestamp)}
+                             </span>
                           </div>
                           
                           <div className="text-left font-mono">
@@ -3472,6 +3705,73 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       </AnimatePresence>
 
 
+
+      {reversalConfirmTx && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-md bg-[#111111] border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden text-right"
+          >
+            {/* Header decor */}
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-amber-500" />
+            
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-amber-500/15 text-amber-500 rounded-xl">
+                <ArrowRightLeft size={20} />
+              </div>
+              <h3 className="text-base font-bold text-white font-cairo">تأكيد عملية عكس القيد المالي</h3>
+            </div>
+            
+            <p className="text-xs text-gray-400 font-cairo leading-relaxed mb-4">
+              هل أنت متأكد من رغبتك في عكس القيد المالي التالي؟ سيقوم النظام بإصدار مستند عكسي تلقائي لضبط الحسابات وتحديث الأرصدة المرتبطة بالصناديق والعملاء.
+            </p>
+            
+            <div className="bg-black/40 border border-white/5 rounded-xl p-4 space-y-2 mb-6 font-mono text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-cairo">رقم السند:</span>
+                <span className="text-amber-500 font-bold">{reversalConfirmTx.voucherNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-cairo">العميل / الجهة:</span>
+                <span className="text-white font-bold font-cairo">{reversalConfirmTx.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 font-cairo">نوع العملية:</span>
+                <span className="text-gray-300 font-bold font-cairo">{reversalConfirmTx.transactionCategory || (reversalConfirmTx.type === 'receipt' ? 'قبض' : 'صرف')}</span>
+              </div>
+              <div className="flex justify-between border-t border-white/5 pt-2 mt-2">
+                <span className="text-gray-500 font-cairo">مبلغ القيد:</span>
+                <span className="text-rose-500 font-black">{Math.abs(reversalConfirmTx.amount).toLocaleString('en-US')} {reversalConfirmTx.currency}</span>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setReversalConfirmTx(null)}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-xs font-bold font-cairo border border-white/5 transition-all cursor-pointer"
+              >
+                إلغاء وتراجع
+              </button>
+              <button
+                type="button"
+                disabled={isPosting}
+                onClick={async () => {
+                  const tx = reversalConfirmTx;
+                  setReversalConfirmTx(null);
+                  await handleReverseEntry(tx);
+                }}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold font-cairo transition-all cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50"
+              >
+                {isPosting ? <Loader2 size={14} className="animate-spin" /> : null}
+                <span>نعم، تأكيد عكس القيد</span>
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {previewData && (
         <PrintPreviewOverlay

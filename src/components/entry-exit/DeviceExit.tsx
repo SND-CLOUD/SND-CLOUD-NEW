@@ -1,7 +1,7 @@
 import { CustomerAutocomplete } from '../CustomerAutocomplete';
 import { sharePdfFile, openWhatsApp } from '../../lib/shareHelper';
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc, writeBatch, getDoc } from '../../firebase';
+import { collection, onSnapshot, doc, writeBatch, getDoc, setDoc } from '../../firebase';
 import { db } from '../../firebase';
 import { Invoice, InvoiceItem, User } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -161,6 +161,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
     currency: string;
     notes: string;
     type: 'cash' | 'bank';
+    bankDetails?: { depositorName: string; referenceNumber: string };
     isActive: boolean;
   } | null>(null);
 
@@ -168,6 +169,8 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   const [modalSelectedFundId, setModalSelectedFundId] = useState<string>('');
   const [modalAmount, setModalAmount] = useState<number>(0);
   const [modalNotes, setModalNotes] = useState<string>('');
+  const [modalDepositorName, setModalDepositorName] = useState<string>('');
+  const [modalReferenceNumber, setModalReferenceNumber] = useState<string>('');
 
   useEffect(() => {
     const fetchFunds = async () => {
@@ -512,34 +515,33 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
 
       // Save transaction in vault_transactions if paid amount is higher than 0
       if (Number(activePrintData.paidAmount) > 0) {
-        const txRef = doc(collection(db, 'vault_transactions'));
-        batch.set(txRef, {
-          currency: selectedInvoice.currency || 'USD',
-          amount: Number(activePrintData.paidAmount),
-          customerName: selectedInvoice.customerName || 'عميل نقدي',
-          invoiceNumber: String(selectedInvoice.invoiceNumber),
-          userName: user?.name || user?.username || 'مدير النظام',
-          userId: user?.id || 'admin',
-          timestamp: new Date().getTime(),
-          type: 'invoice_payment',
-          notes: otherPayment?.isActive 
-            ? otherPayment.notes || `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`
-            : `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
-          customerId: selectedInvoice.customerId || ''
-        });
+        // Generate the voucher number
+        let nextNum = 1000;
+        try {
+          const resNum = await localDb.query("SELECT COALESCE(MAX(voucherNumber), 1000) as maxNum FROM vault_transactions");
+          nextNum = (resNum.values?.[0]?.maxNum || 1000) + 1;
+        } catch (e) {
+          nextNum = 1001; // fallback
+        }
 
         // 1. If Other Payment is active
         if (otherPayment && otherPayment.isActive) {
           try {
             const txId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
             const timestampIso = new Date().toISOString();
+            
+            const bankDetailsJson = otherPayment.type === 'bank' && otherPayment.bankDetails
+              ? JSON.stringify(otherPayment.bankDetails)
+              : '';
+
             await localDb.run(
               `INSERT INTO vault_transactions (
                 id, currency, amount, customerName, invoiceNumber,
                 userName, userNumber, userId, timestamp, type,
                 notes, updatedAt, voucherNumber, transactionCategory,
-                fundId, fundName, customerId, isReversed, isReversal, reversalOf
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '')`,
+                fundId, fundName, customerId, isReversed, isReversal, reversalOf,
+                paymentType, liabilityCurrency, liabilityAmount, receiptCurrency, receiptAmount, bankDetails
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, ?, ?)`,
               [
                 txId,
                 otherPayment.currency,
@@ -551,13 +553,19 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 user?.id || 'admin',
                 timestampIso,
                 'receipt',
-                otherPayment.notes || `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
+                otherPayment.notes ? `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber} - ${otherPayment.notes}` : `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
                 timestampIso,
-                1001,
+                nextNum,
                 'دفعة أجهزة',
                 otherPayment.fundId,
                 otherPayment.fundName,
-                selectedInvoice.customerId || ''
+                selectedInvoice.customerId || '',
+                2, // paymentType = 2 (different currency)
+                selectedInvoice.currency || 'USD',
+                Number(activePrintData.paidAmount),
+                otherPayment.currency,
+                otherPayment.amount,
+                bankDetailsJson
               ]
             );
 
@@ -566,8 +574,39 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
               "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
               [otherPayment.amount, otherPayment.fundId]
             );
+
+            // Add to firestore
+            await setDoc(doc(db, 'vault_transactions', txId), {
+                id: txId,
+                currency: otherPayment.currency,
+                amount: otherPayment.amount,
+                customerName: selectedInvoice.customerName || 'عميل نقدي',
+                invoiceNumber: String(selectedInvoice.invoiceNumber),
+                userName: user?.name || user?.username || 'مدير النظام',
+                userNumber: 1,
+                userId: user?.id || 'admin',
+                timestamp: new Date().getTime(),
+                type: 'receipt',
+                notes: otherPayment.notes ? `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber} - ${otherPayment.notes}` : `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
+                updatedAt: timestampIso,
+                voucherNumber: nextNum,
+                transactionCategory: 'دفعة أجهزة',
+                fundId: otherPayment.fundId,
+                fundName: otherPayment.fundName,
+                customerId: selectedInvoice.customerId || '',
+                isReversed: 0,
+                isReversal: 0,
+                reversalOf: '',
+                paymentType: 2,
+                liabilityCurrency: selectedInvoice.currency || 'USD',
+                liabilityAmount: Number(activePrintData.paidAmount),
+                receiptCurrency: otherPayment.currency,
+                receiptAmount: otherPayment.amount,
+                bankDetails: bankDetailsJson
+            });
+
           } catch (sqliteErr) {
-            console.error("Failed to write other payment to SQLite:", sqliteErr);
+            console.error("Failed to write other payment to SQLite/Firestore:", sqliteErr);
           }
         } else {
           // 2. Standard Cash Payment - Automatic routing to default cash fund for the invoice's currency
@@ -581,8 +620,9 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                   id, currency, amount, customerName, invoiceNumber,
                   userName, userNumber, userId, timestamp, type,
                   notes, updatedAt, voucherNumber, transactionCategory,
-                  fundId, fundName, customerId, isReversed, isReversal, reversalOf
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '')`,
+                  fundId, fundName, customerId, isReversed, isReversal, reversalOf,
+                  paymentType, liabilityCurrency, liabilityAmount, receiptCurrency, receiptAmount, bankDetails
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, ?, ?)`,
                 [
                   txId,
                   selectedInvoice.currency || 'USD',
@@ -594,13 +634,19 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                   user?.id || 'admin',
                   timestampIso,
                   'receipt',
-                  `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
+                  `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
                   timestampIso,
-                  1001,
+                  nextNum,
                   'دفعة أجهزة',
                   defaultFund.id,
                   defaultFund.name,
-                  selectedInvoice.customerId || ''
+                  selectedInvoice.customerId || '',
+                  1, // paymentType = 1 (same currency)
+                  selectedInvoice.currency || 'USD',
+                  Number(activePrintData.paidAmount),
+                  selectedInvoice.currency || 'USD',
+                  Number(activePrintData.paidAmount),
+                  ''
                 ]
               );
 
@@ -609,8 +655,39 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
                 [Number(activePrintData.paidAmount), defaultFund.id]
               );
+
+              // Add to firestore
+              await setDoc(doc(db, 'vault_transactions', txId), {
+                  id: txId,
+                  currency: selectedInvoice.currency || 'USD',
+                  amount: Number(activePrintData.paidAmount),
+                  customerName: selectedInvoice.customerName || 'عميل نقدي',
+                  invoiceNumber: String(selectedInvoice.invoiceNumber),
+                  userName: user?.name || user?.username || 'مدير النظام',
+                  userNumber: 1,
+                  userId: user?.id || 'admin',
+                  timestamp: new Date().getTime(),
+                  type: 'receipt',
+                  notes: `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
+                  updatedAt: timestampIso,
+                  voucherNumber: nextNum,
+                  transactionCategory: 'دفعة أجهزة',
+                  fundId: defaultFund.id,
+                  fundName: defaultFund.name,
+                  customerId: selectedInvoice.customerId || '',
+                  isReversed: 0,
+                  isReversal: 0,
+                  reversalOf: '',
+                  paymentType: 1,
+                  liabilityCurrency: selectedInvoice.currency || 'USD',
+                  liabilityAmount: Number(activePrintData.paidAmount),
+                  receiptCurrency: selectedInvoice.currency || 'USD',
+                  receiptAmount: Number(activePrintData.paidAmount),
+                  bankDetails: ''
+              });
+
             } catch (sqliteErr) {
-              console.error("Failed to write standard payment to SQLite:", sqliteErr);
+              console.error("Failed to write standard payment to SQLite/Firestore:", sqliteErr);
             }
           }
         }
@@ -1403,8 +1480,10 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                           } else if (funds.length > 0) {
                             setModalSelectedFundId(funds[0].id);
                           }
-                          setModalAmount(remainingCostForSelection > 0 ? remainingCostForSelection : 0);
+                          setModalAmount(0); // Default to 0
                           setModalNotes('');
+                          setModalDepositorName('');
+                          setModalReferenceNumber('');
                           setShowOtherPaymentModal(true);
                         }}
                         className={`h-9 px-3 rounded-lg border text-xs font-bold font-cairo flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -1744,6 +1823,14 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
 
             {/* Content */}
             <div className="p-5 space-y-4 flex-1">
+              {/* Info Banner */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col items-center justify-center text-center">
+                <span className="text-[10px] text-amber-400 font-bold mb-1 font-cairo">المبلغ المستحق الدفع (الذمة)</span>
+                <span className="text-xl font-black text-amber-500 font-mono" dir="ltr">
+                  {remainingCostForSelection} <span className="text-sm">{selectedInvoice.currency || 'USD'}</span>
+                </span>
+              </div>
+
               {/* 1. Payment Type Selection */}
               <div>
                 <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 font-cairo text-right">نوع طريقة الدفع</label>
@@ -1813,7 +1900,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                     inputMode="decimal"
                     dir="ltr"
                     lang="en"
-                    value={modalAmount || ''}
+                    value={modalAmount}
                     onFocus={e => e.target.select()}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9.]/g, '');
@@ -1831,6 +1918,31 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                   </span>
                 </div>
               </div>
+
+              {modalPaymentType === 'bank' && (
+                <>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">اسم المودع</label>
+                    <input
+                      type="text"
+                      value={modalDepositorName}
+                      onChange={(e) => setModalDepositorName(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-200 focus:outline-none focus:border-purple-500 font-cairo text-right"
+                      placeholder="اسم الشخص المودع"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">رقم المرجع / الإشعار</label>
+                    <input
+                      type="text"
+                      value={modalReferenceNumber}
+                      onChange={(e) => setModalReferenceNumber(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-200 focus:outline-none focus:border-purple-500 font-cairo text-right"
+                      placeholder="رقم مرجع الحوالة أو الإشعار"
+                    />
+                  </div>
+                </>
+              )}
 
               {/* 4. Notes Field */}
               <div>
@@ -1866,6 +1978,10 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       currency: targetFund.currency,
                       notes: modalNotes.trim(),
                       type: modalPaymentType,
+                      bankDetails: modalPaymentType === 'bank' ? {
+                        depositorName: modalDepositorName.trim(),
+                        referenceNumber: modalReferenceNumber.trim()
+                      } : undefined,
                       isActive: true
                     });
                     setShowOtherPaymentModal(false);

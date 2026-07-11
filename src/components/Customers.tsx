@@ -4,7 +4,7 @@ import { sharePdfFile, openWhatsApp, sendUniversalReminder } from '../lib/shareH
 import PrintPreviewOverlay from './PrintPreviewOverlay';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, serverTimestamp } from '../firebase';
+import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, serverTimestamp, parseDateSafe } from '../firebase';
 import { db } from '../firebase';
 import { User, Phone, Smartphone, AlertTriangle, CheckCircle, Package, ArrowLeft, ArrowUpRight, ArrowRight, LogOut, Search, FileText, ChevronLeft, Eye, Clock, DollarSign, X, Users, ArrowUpDown, Plus, Edit2, Check, Building, Mail, Printer, UserPlus, MessageCircle, MapPin, Facebook } from 'lucide-react';
 import { Customer, Invoice, InvoiceItem, User as SystemUser, ShopConfig } from '../types';
@@ -218,15 +218,6 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     ).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   };
 
-  const getCustomerOutstandingAmount = (customerId: string) => {
-    const customerInvs = invoices.filter(inv => inv.customerId === customerId);
-    return customerInvs.reduce((sum, inv) => {
-      const invItems = items.filter(it => it.invoiceNumber === inv.invoiceNumber);
-      const actualCost = getInvoiceActualCost(invItems);
-      return sum + Math.max(0, actualCost - Number(inv.amountPaid || 0));
-    }, 0);
-  };
-
   const getCustomerTotalCost = (customerId: string) => {
     const customerInvs = invoices.filter(inv => inv.customerId === customerId);
     return customerInvs.reduce((sum, inv) => {
@@ -236,20 +227,21 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
   };
 
   const getCustomerTotalPaid = (customerId: string) => {
-    const customerInvs = invoices.filter(inv => inv.customerId === customerId);
-    const invoicesPaid = customerInvs.reduce((sum, inv) => sum + Number(inv.amountPaid || 0), 0);
-    
-    // Add separate collections (receipt transactions)
+    // Receipts
     const separateReceipts = transactions
-      .filter(tx => tx.customerId === customerId && tx.type === 'receipt')
-      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+      .filter(tx => tx.customerId === customerId && tx.type === 'receipt' && !tx.isReversed && !tx.isReversal && tx.status !== 'reversed' && tx.status !== 'reversal')
+      .reduce((sum, tx) => sum + (tx.liabilityAmount || Math.abs(Number(tx.amount || 0))), 0);
 
-    // Subtract separate payments (payment transactions)
+    // Payments
     const separatePayments = transactions
-      .filter(tx => tx.customerId === customerId && tx.type === 'payment')
-      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+      .filter(tx => tx.customerId === customerId && tx.type === 'payment' && !tx.isReversed && !tx.isReversal && tx.status !== 'reversed' && tx.status !== 'reversal')
+      .reduce((sum, tx) => sum + (tx.liabilityAmount || Math.abs(Number(tx.amount || 0))), 0);
 
-    return invoicesPaid + separateReceipts - separatePayments;
+    return separateReceipts - separatePayments;
+  };
+
+  const getCustomerOutstandingAmount = (customerId: string) => {
+    return Math.max(0, getCustomerTotalCost(customerId) - getCustomerTotalPaid(customerId));
   };
 
   // Generate statement entries chronologically for Selected Customer
@@ -263,6 +255,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
       notes: string;
       debit: number;
       credit: number;
+      runningBalance?: number;
     }[] = [];
 
     // 1. Get customer invoices
@@ -270,35 +263,17 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     customerInvs.forEach(inv => {
       const invItems = items.filter(it => it.invoiceNumber === inv.invoiceNumber);
       const actualCost = getInvoiceActualCost(invItems);
-
       // Row 1: Invoice debit
       entries.push({
         id: `inv-cost-${inv.id}`,
-        date: inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now()),
+        date: parseDateSafe(inv.createdAt) || new Date(),
         type: 'فاتورة صيانة',
         label: 'فاتورة صيانة أجهزة فنية',
         reference: String(inv.invoiceNumber).replace(/#/g, ''),
-        notes: inv.notes || 'خدمات صيانة وقطع غيار للأجهزة المستلمة والمنجزة بالكامل',
+        notes: inv.notes || invItems.map(i => `${i.deviceType} - ${i.brand}`).join(' | '),
         debit: actualCost,
         credit: 0
       });
-
-      // Row 2: Payment credit (Separate Row - Option 2)
-      const amtPaid = Number(inv.amountPaid || 0);
-      if (amtPaid > 0) {
-        const baseDate = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now());
-        const paymentDate = new Date(baseDate.getTime() + 1000); // 1 second after invoice
-        entries.push({
-          id: `inv-payment-${inv.id}`,
-          date: paymentDate,
-          type: 'سداد فاتورة',
-          label: `فئة سداد في الفاتورة رقم ${String(inv.invoiceNumber).replace(/#/g, '')}`,
-          reference: '', // Empty reference ("لا يذكر فيه رقم سند")
-          notes: 'مقبوضات مبيعات وصيانة مرجعة بالفاتورة',
-          debit: 0,
-          credit: amtPaid
-        });
-      }
     });
 
     // 2. Get separate receipts and payments (filtering out reversed/reversals for customers)
@@ -309,28 +284,50 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
       tx.status !== 'reversed' &&
       tx.status !== 'reversal'
     );
+
     customerTransactions.forEach(tx => {
-      const txDate = tx.timestamp?.toDate ? tx.timestamp.toDate() : (tx.timestamp ? new Date(tx.timestamp) : new Date());
+      const txDate = parseDateSafe(tx.timestamp) || new Date();
       if (tx.type === 'receipt') {
+        const isLinkedToInvoice = !!tx.invoiceNumber;
+        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
+        
+        let docType = 'سند قبض';
+        let statement = tx.transactionCategory || 'دفعه تحت الحساب';
+        let details = tx.notes || '';
+        let refStr = String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, '');
+
+        if (isLinkedToInvoice) {
+           docType = 'سداد فاتورة';
+           statement = `سداد في فاتورة رقم ${tx.invoiceNumber}`;
+           refStr = `${tx.invoiceNumber}${tx.voucherNumber || '100'}`;
+        } else if (tx.transactionCategory === 'دفعة أجهزة') {
+           docType = 'سداد فاتورة';
+           statement = `سداد في فاتورة رقم ${tx.invoiceNumber || '؟'}`;
+           if (tx.invoiceNumber) {
+             refStr = `${tx.invoiceNumber}${tx.voucherNumber || '100'}`;
+           }
+        }
+
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
-          type: 'سند قبض',
-          label: tx.notes || 'سند قبض مالي مستقل',
-          reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
-          notes: 'مقبوضات نقدية مستقلة مسجلة بالخزينة',
+          type: docType,
+          label: statement,
+          reference: refStr,
+          notes: details,
           debit: 0,
-          credit: Math.abs(Number(tx.amount || 0))
+          credit: liabilityAmount
         });
       } else if (tx.type === 'payment') {
+        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
           type: 'سند صرف',
-          label: tx.notes || 'سند صرف للعميل مستقل',
+          label: tx.transactionCategory || 'سند صرف للعميل',
           reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
-          notes: 'صرف مالي أو استرجاع نقدي للعميل',
-          debit: Math.abs(Number(tx.amount || 0)),
+          notes: tx.notes || '',
+          debit: liabilityAmount,
           credit: 0
         });
       }

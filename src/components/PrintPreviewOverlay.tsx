@@ -280,7 +280,7 @@ export default function PrintPreviewOverlay({
                 ? `${formatDate(invoice?.createdAt)} - ${formatTime(invoice?.createdAt)}`
                 : (type === 'statement'
                     ? `${formatDate(previewDate)} - ${formatTime(previewDate)}`
-                    : `${formatDate(voucher?.date)} - ${formatTime(voucher?.date)}`)}
+                    : `${formatDate(voucher?.timestamp || voucher?.date)} - ${formatTime(voucher?.timestamp || voucher?.date)}`)}
             </span>
           </div>
           <div className="font-bold text-gray-700 flex justify-between gap-4 border-t border-gray-200 pt-0.5 mt-0.5 font-cairo">
@@ -489,9 +489,9 @@ export default function PrintPreviewOverlay({
                   {/* Header Row */}
                   <div className="bg-gray-100 border-b-2 border-black text-black font-cairo font-black flex items-stretch text-[11px] shrink-0">
                     <div className="py-2 px-1.5 text-center w-8 border-l border-black flex items-center justify-center shrink-0">م</div>
-                    <div className="py-2 px-2 border-l border-black text-right flex items-center justify-start whitespace-nowrap overflow-hidden" style={{flex: 1}}>نوع الحركة</div>
-                    <div className="py-2 px-2 text-center border-l border-black w-20 flex items-center justify-center shrink-0 whitespace-nowrap" dir="ltr">رقم المرجع</div>
                     <div className="py-2 px-2 text-center border-l border-black w-24 flex items-center justify-center shrink-0 whitespace-nowrap" dir="ltr">تاريخ القيد</div>
+                    <div className="py-2 px-2 border-l border-black text-right flex items-center justify-start whitespace-nowrap overflow-hidden" style={{flex: 1}}>المستند</div>
+                    <div className="py-2 px-2 text-center border-l border-black w-20 flex items-center justify-center shrink-0 whitespace-nowrap" dir="ltr">رقمه</div>
                     <div className="py-2 px-2 border-l border-black text-right w-44 flex items-center justify-start shrink-0 whitespace-nowrap overflow-hidden">البيان والتفاصيل</div>
                     <div className="py-2 px-2 text-rose-900 text-center border-l border-black bg-rose-50/10 w-24 flex items-center justify-center shrink-0 whitespace-nowrap">مدين</div>
                     <div className="py-2 px-2 text-emerald-900 text-center border-l border-black bg-emerald-50/10 w-24 flex items-center justify-center shrink-0 whitespace-nowrap">دائن</div>
@@ -511,17 +511,18 @@ export default function PrintPreviewOverlay({
                             <div className="px-1.5 font-mono text-center text-gray-800 border-l border-black bg-gray-50/50 w-8 flex items-center justify-center shrink-0 whitespace-nowrap">
                               {globalIndex}
                             </div>
+                            <div className="px-2 font-mono text-[9px] text-gray-700 text-center border-l border-black w-24 flex items-center justify-center shrink-0 whitespace-nowrap overflow-hidden text-ellipsis" dir="ltr">
+                              {entry.formattedDate}
+                            </div>
                             <div className="px-2 font-cairo font-bold text-black border-l border-black text-right flex-1 flex items-center justify-start whitespace-normal">
                               {entry.type}
                             </div>
                             <div className="px-2 font-mono font-bold text-gray-800 text-center border-l border-black w-20 flex items-center justify-center shrink-0 whitespace-nowrap text-ellipsis overflow-hidden" dir="ltr">
                               {entry.reference}
                             </div>
-                            <div className="px-2 font-mono text-[9px] text-gray-700 text-center border-l border-black w-24 flex items-center justify-center shrink-0 whitespace-nowrap overflow-hidden text-ellipsis" dir="ltr">
-                              {entry.formattedDate}
-                            </div>
-                            <div className="px-2 py-1 font-cairo text-black w-44 border-l border-black text-right flex items-center justify-start shrink-0 whitespace-normal">
+                            <div className="px-2 py-1 font-cairo text-black w-44 border-l border-black text-right flex flex-col items-start justify-center shrink-0 whitespace-normal">
                               <span className="font-bold leading-normal break-words" title={entry.label}>{entry.label}</span>
+                              {entry.notes && <span className="font-semibold text-gray-600 text-[8px] leading-tight break-words" title={entry.notes}>{entry.notes}</span>}
                             </div>
                             <div className="px-2 font-mono font-black text-rose-800 text-center border-l border-black bg-rose-50/5 w-24 flex items-center justify-center shrink-0 whitespace-nowrap text-ellipsis overflow-hidden" dir="ltr">
                               {entry.debit > 0 ? entry.debit.toLocaleString('en-US') : '---'}
@@ -1009,9 +1010,16 @@ export default function PrintPreviewOverlay({
   const formatDate = (dateObj: any) => {
     if (!dateObj) return '---';
     try {
-      if (dateObj.toDate) return dateObj.toDate().toLocaleDateString('ar-YE');
-      if (dateObj.seconds) return new Date(dateObj.seconds * 1000).toLocaleDateString('ar-YE');
-      return new Date(dateObj).toLocaleDateString('ar-YE');
+      let d: Date;
+      if (dateObj.toDate) {
+        d = dateObj.toDate();
+      } else if (typeof dateObj.seconds === 'number') {
+        d = new Date(dateObj.seconds * 1000);
+      } else {
+        d = new Date(dateObj);
+      }
+      if (isNaN(d.getTime())) return '---';
+      return d.toLocaleDateString('ar-YE');
     } catch (e) {
       return '---';
     }
@@ -1020,9 +1028,16 @@ export default function PrintPreviewOverlay({
   const formatTime = (dateObj: any) => {
     if (!dateObj) return '---';
     try {
-      if (dateObj.toDate) return dateObj.toDate().toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
-      if (dateObj.seconds) return new Date(dateObj.seconds * 1000).toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
-      return new Date(dateObj).toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
+      let d: Date;
+      if (dateObj.toDate) {
+        d = dateObj.toDate();
+      } else if (typeof dateObj.seconds === 'number') {
+        d = new Date(dateObj.seconds * 1000);
+      } else {
+        d = new Date(dateObj);
+      }
+      if (isNaN(d.getTime())) return '---';
+      return d.toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
     } catch (e) {
       return '---';
     }

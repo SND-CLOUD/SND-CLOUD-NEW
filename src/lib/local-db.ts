@@ -192,7 +192,13 @@ class LocalDatabase {
           updatedAt TEXT,
           isReversed INTEGER DEFAULT 0,
           isReversal INTEGER DEFAULT 0,
-          reversalOf TEXT
+          reversalOf TEXT,
+          paymentType INTEGER,
+          liabilityCurrency TEXT,
+          liabilityAmount REAL,
+          receiptCurrency TEXT,
+          receiptAmount REAL,
+          bankDetails TEXT
         );
 
         CREATE TABLE IF NOT EXISTS maintenance_actions (
@@ -543,6 +549,36 @@ class LocalDatabase {
       // Attempt to add reversalOf column to existing vault_transactions table if needed
       try {
         await this.db.run('ALTER TABLE vault_transactions ADD COLUMN reversalOf TEXT');
+      } catch (err) {}
+
+      // Attempt to add paymentType column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN paymentType INTEGER');
+      } catch (err) {}
+
+      // Attempt to add liabilityCurrency column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN liabilityCurrency TEXT');
+      } catch (err) {}
+
+      // Attempt to add liabilityAmount column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN liabilityAmount REAL');
+      } catch (err) {}
+
+      // Attempt to add receiptCurrency column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN receiptCurrency TEXT');
+      } catch (err) {}
+
+      // Attempt to add receiptAmount column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN receiptAmount REAL');
+      } catch (err) {}
+
+      // Attempt to add bankDetails column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN bankDetails TEXT');
       } catch (err) {}
 
       // Attempt to add updatedAt column to existing device_categories table if needed
