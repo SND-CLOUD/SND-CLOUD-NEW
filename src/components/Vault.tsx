@@ -53,7 +53,7 @@ import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
 import { sanitizeDocumentStyles, sanitizeElementInlineStyles, cleanOklchInStyleText } from '../lib/html2canvasHelper';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { doc, getDoc, db } from '../firebase';
+import { doc, getDoc, db, setDoc, collection, addDoc } from '../firebase';
 
 interface VaultTransaction {
   id: string;
@@ -73,6 +73,10 @@ interface VaultTransaction {
   fundId: string;
   fundName: string;
   customerId?: string;
+  isReversed?: number | boolean;
+  isReversal?: number | boolean;
+  reversalOf?: string;
+  status?: string;
 }
 
 interface FinFund {
@@ -770,6 +774,156 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || 'فشل عملية التحويل');
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleReverseEntry = async (tx: VaultTransaction) => {
+    if (isPosting) return;
+    
+    // Check permissions
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      setErrorMsg('عذراً، فقط مدراء النظام المخولين لديهم صلاحية عكس القيد');
+      return;
+    }
+
+    if (tx.isReversed || tx.isReversal || tx.status === 'reversed' || tx.status === 'reversal') {
+      setErrorMsg('هذا القيد معكوس بالفعل أو أنه قيد عكسي ولا يمكن عكسه مجدداً');
+      return;
+    }
+
+    const confirmAction = window.confirm(`هل أنت متأكد من عكس القيد رقم ${tx.voucherNumber} بقيمة ${Math.abs(tx.amount)} ${tx.currency}؟`);
+    if (!confirmAction) return;
+
+    setIsPosting(true);
+    try {
+      const timestampIso = new Date().toISOString();
+      const reversalTxId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
+      
+      // Get next voucher number
+      const resNum = await localDb.query("SELECT COALESCE(MAX(voucherNumber), 1000) as maxNum FROM vault_transactions");
+      const nextNum = (resNum.values?.[0]?.maxNum || 1000) + 1;
+
+      const reverseAmount = -Number(tx.amount);
+      const originalVoucherNotes = tx.notes || '';
+      const updatedOriginalNotes = `${originalVoucherNotes} [تم عكس القيد بواسطة القيد رقم ${nextNum}]`;
+      const reversalNotes = `[قيد عكسي] للمستند رقم ${tx.voucherNumber} - ${originalVoucherNotes}`;
+
+      // 1. Update original transaction in SQLite
+      await localDb.run(
+        "UPDATE vault_transactions SET isReversed = 1, notes = ?, updatedAt = ? WHERE id = ?",
+        [updatedOriginalNotes, timestampIso, tx.id]
+      );
+
+      // 2. Insert reversal counter-transaction in SQLite
+      await localDb.run(
+        `INSERT INTO vault_transactions (
+          id, currency, amount, customerName, invoiceNumber, 
+          userName, userNumber, userId, timestamp, type, 
+          notes, updatedAt, voucherNumber, transactionCategory, 
+          fundId, fundName, customerId, isReversed, isReversal, reversalOf
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+        [
+          reversalTxId,
+          tx.currency,
+          reverseAmount,
+          tx.customerName,
+          tx.invoiceNumber || '',
+          user.name || 'المدير العام',
+          user.userNumber || 1,
+          user.id || 'none',
+          timestampIso,
+          tx.type === 'receipt' ? 'payment' : 'receipt',
+          reversalNotes,
+          timestampIso,
+          nextNum,
+          'عكس قيد مال',
+          tx.fundId || '',
+          tx.fundName || '',
+          tx.customerId || '',
+          tx.id
+        ]
+      );
+
+      // 3. Update SQLite fund balance
+      if (tx.fundId) {
+        await localDb.run(
+          "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
+          [reverseAmount, tx.fundId]
+        );
+      }
+
+      // 4. Update Firestore if the transaction can be found there (it has a customerId or matching id)
+      try {
+        // Update original doc in Firestore
+        const originalDocRef = doc(db, 'vault_transactions', tx.id);
+        const origSnap = await getDoc(originalDocRef);
+        if (origSnap.exists()) {
+          await setDoc(originalDocRef, {
+            ...origSnap.data(),
+            isReversed: 1,
+            status: 'reversed',
+            notes: updatedOriginalNotes,
+            updatedAt: timestampIso
+          });
+        }
+
+        // Set reversal doc in Firestore
+        await setDoc(doc(db, 'vault_transactions', reversalTxId), {
+          id: reversalTxId,
+          currency: tx.currency,
+          amount: reverseAmount,
+          customerName: tx.customerName,
+          invoiceNumber: tx.invoiceNumber || '',
+          userName: user.name || 'المدير العام',
+          userNumber: user.userNumber || 1,
+          userId: user.id || 'none',
+          timestamp: new Date().getTime(),
+          type: tx.type === 'receipt' ? 'payment' : 'receipt',
+          notes: reversalNotes,
+          updatedAt: timestampIso,
+          voucherNumber: nextNum,
+          transactionCategory: 'عكس قيد مال',
+          fundId: tx.fundId || '',
+          fundName: tx.fundName || '',
+          customerId: tx.customerId || '',
+          isReversed: 0,
+          isReversal: 1,
+          reversalOf: tx.id,
+          status: 'reversal'
+        });
+
+        // 5. Update Invoice paidAmount in Firestore if connected to an invoice
+        if (tx.invoiceNumber) {
+          const cleanInvNum = String(tx.invoiceNumber).replace(/#/g, '');
+          const matchingInv = invoices.find(inv => String(inv.invoiceNumber).replace(/#/g, '') === cleanInvNum);
+          if (matchingInv) {
+            const invoiceRef = doc(db, 'invoices', matchingInv.id);
+            const currentPaid = Number(matchingInv.amountPaid || 0);
+            const refundPaid = tx.type === 'receipt' ? -Math.abs(tx.amount) : Math.abs(tx.amount);
+            const newPaid = Math.max(0, currentPaid + refundPaid);
+            
+            await setDoc(invoiceRef, {
+              ...matchingInv,
+              amountPaid: newPaid,
+              updatedAt: new Date().getTime()
+            }, { merge: true });
+          }
+        }
+      } catch (fsErr) {
+        console.warn("Firestore sync during reversal failed/skipped:", fsErr);
+      }
+
+      setSuccessMsg(`تم عكس القيد بنجاح بقيد عكسي رقم ${nextNum}`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+
+      await loadDatabaseData();
+      await calculateNextVoucherNumber();
+
+    } catch (err: any) {
+      console.error("Reversal error:", err);
+      setErrorMsg(err.message || 'فشل عكس القيد');
     } finally {
       setIsPosting(false);
     }
@@ -1530,6 +1684,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                         <th className="px-4 py-3">اسم العميل / الجهة</th>
                         <th className="px-4 py-3 text-center">نوع العملية</th>
                         <th className="px-4 py-3 text-center">مبلغ السند</th>
+                        <th className="px-4 py-3 text-center">الحالة / عكس القيد</th>
                         <th className="px-4 py-3 text-left">التاريخ</th>
                       </tr>
                     </thead>
@@ -1552,6 +1707,26 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                             </td>
                             <td className={`px-4 py-2.5 text-center font-bold text-xs ${activeSegment === 'receipt' ? 'text-emerald-500' : 'text-rose-500'}`}>
                               {Math.abs(tx.amount).toLocaleString('en-US')} <span className="text-[9px] opacity-70 font-sans">{tx.currency}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-center">
+                              {tx.isReversed ? (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20" title={tx.notes}>
+                                  تم العكس
+                                </span>
+                              ) : tx.isReversal ? (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20" title={tx.notes}>
+                                  قيد عكسي
+                                </span>
+                              ) : (user.role === 'admin' || user.role === 'manager') ? (
+                                <button
+                                  onClick={() => handleReverseEntry(tx)}
+                                  className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500 hover:bg-amber-600 hover:text-white border border-amber-500/20 transition-all cursor-pointer"
+                                >
+                                  عكس القيد
+                                </button>
+                              ) : (
+                                <span className="text-gray-500 text-[10px] italic">سليم</span>
+                              )}
                             </td>
                             <td className="px-4 py-2.5 text-left text-gray-500 font-mono italic">
                               {new Date(tx.timestamp).toLocaleString('ar-YE', { day: '2-digit', month: '2-digit', year: 'numeric' })}

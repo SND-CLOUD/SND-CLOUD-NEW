@@ -189,7 +189,10 @@ class LocalDatabase {
           timestamp TEXT,
           type TEXT,
           notes TEXT,
-          updatedAt TEXT
+          updatedAt TEXT,
+          isReversed INTEGER DEFAULT 0,
+          isReversal INTEGER DEFAULT 0,
+          reversalOf TEXT
         );
 
         CREATE TABLE IF NOT EXISTS maintenance_actions (
@@ -526,6 +529,21 @@ class LocalDatabase {
       } catch (err) {
         // Column probably already exists, which is fine
       }
+
+      // Attempt to add isReversed column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN isReversed INTEGER DEFAULT 0');
+      } catch (err) {}
+
+      // Attempt to add isReversal column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN isReversal INTEGER DEFAULT 0');
+      } catch (err) {}
+
+      // Attempt to add reversalOf column to existing vault_transactions table if needed
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN reversalOf TEXT');
+      } catch (err) {}
 
       // Attempt to add updatedAt column to existing device_categories table if needed
       try {

@@ -5,7 +5,8 @@ import { collection, onSnapshot, doc, writeBatch, getDoc } from '../../firebase'
 import { db } from '../../firebase';
 import { Invoice, InvoiceItem, User } from '../../types';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, Search, Save, X, Info, HardDrive, User as UserIcon, ArrowLeft, ArrowRight, Phone, MapPin, Facebook, Smartphone, ChevronLeft, ChevronRight, SlidersHorizontal, MessageCircle } from 'lucide-react';
+import { CheckCircle, Search, Save, X, Info, HardDrive, User as UserIcon, ArrowLeft, ArrowRight, Phone, MapPin, Facebook, Smartphone, ChevronLeft, ChevronRight, SlidersHorizontal, MessageCircle, Wallet, Settings } from 'lucide-react';
+import { localDb } from '../../lib/local-db';
 import ReportActions from '../ReportActions';
 import PrintPreviewOverlay from '../PrintPreviewOverlay';
 import jsPDF from 'jspdf';
@@ -149,6 +150,41 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [exitPaidAmount, setExitPaidAmount] = useState<number>(0);
   const [exitDiscountAmount, setExitDiscountAmount] = useState<number>(0);
+
+  // Other Payment Method States
+  const [funds, setFunds] = useState<any[]>([]);
+  const [showOtherPaymentModal, setShowOtherPaymentModal] = useState(false);
+  const [otherPayment, setOtherPayment] = useState<{
+    fundId: string;
+    fundName: string;
+    amount: number;
+    currency: string;
+    notes: string;
+    type: 'cash' | 'bank';
+    isActive: boolean;
+  } | null>(null);
+
+  const [modalPaymentType, setModalPaymentType] = useState<'cash' | 'bank'>('cash');
+  const [modalSelectedFundId, setModalSelectedFundId] = useState<string>('');
+  const [modalAmount, setModalAmount] = useState<number>(0);
+  const [modalNotes, setModalNotes] = useState<string>('');
+
+  useEffect(() => {
+    const fetchFunds = async () => {
+      try {
+        const res = await localDb.query("SELECT * FROM fin_funds WHERE status = 'active' ORDER BY name ASC");
+        setFunds(res.values || []);
+      } catch (err) {
+        console.error("Error fetching funds:", err);
+      }
+    };
+    fetchFunds();
+  }, []);
+
+  useEffect(() => {
+    setOtherPayment(null);
+  }, [selectedInvoice]);
+
   const [activePrintData, setActivePrintData] = useState<{
     invoice: Invoice;
     items: InvoiceItem[];
@@ -486,8 +522,98 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
           userId: user?.id || 'admin',
           timestamp: new Date().getTime(),
           type: 'invoice_payment',
-          notes: `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`
+          notes: otherPayment?.isActive 
+            ? otherPayment.notes || `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`
+            : `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
+          customerId: selectedInvoice.customerId || ''
         });
+
+        // 1. If Other Payment is active
+        if (otherPayment && otherPayment.isActive) {
+          try {
+            const txId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
+            const timestampIso = new Date().toISOString();
+            await localDb.run(
+              `INSERT INTO vault_transactions (
+                id, currency, amount, customerName, invoiceNumber,
+                userName, userNumber, userId, timestamp, type,
+                notes, updatedAt, voucherNumber, transactionCategory,
+                fundId, fundName, customerId, isReversed, isReversal, reversalOf
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '')`,
+              [
+                txId,
+                otherPayment.currency,
+                otherPayment.amount,
+                selectedInvoice.customerName || 'عميل نقدي',
+                String(selectedInvoice.invoiceNumber),
+                user?.name || user?.username || 'مدير النظام',
+                1,
+                user?.id || 'admin',
+                timestampIso,
+                'receipt',
+                otherPayment.notes || `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
+                timestampIso,
+                1001,
+                'دفعة أجهزة',
+                otherPayment.fundId,
+                otherPayment.fundName,
+                selectedInvoice.customerId || ''
+              ]
+            );
+
+            // Update SQLite fund balance
+            await localDb.run(
+              "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
+              [otherPayment.amount, otherPayment.fundId]
+            );
+          } catch (sqliteErr) {
+            console.error("Failed to write other payment to SQLite:", sqliteErr);
+          }
+        } else {
+          // 2. Standard Cash Payment - Automatic routing to default cash fund for the invoice's currency
+          const defaultFund = funds.find(f => f.type === 'cash' && f.currency === (selectedInvoice.currency || 'USD')) || funds.find(f => f.type === 'cash');
+          if (defaultFund) {
+            try {
+              const txId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
+              const timestampIso = new Date().toISOString();
+              await localDb.run(
+                `INSERT INTO vault_transactions (
+                  id, currency, amount, customerName, invoiceNumber,
+                  userName, userNumber, userId, timestamp, type,
+                  notes, updatedAt, voucherNumber, transactionCategory,
+                  fundId, fundName, customerId, isReversed, isReversal, reversalOf
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '')`,
+                [
+                  txId,
+                  selectedInvoice.currency || 'USD',
+                  Number(activePrintData.paidAmount),
+                  selectedInvoice.customerName || 'عميل نقدي',
+                  String(selectedInvoice.invoiceNumber),
+                  user?.name || user?.username || 'مدير النظام',
+                  1,
+                  user?.id || 'admin',
+                  timestampIso,
+                  'receipt',
+                  `دفعة خروج أجهزة من الفاتورة ${selectedInvoice.invoiceNumber}`,
+                  timestampIso,
+                  1001,
+                  'دفعة أجهزة',
+                  defaultFund.id,
+                  defaultFund.name,
+                  selectedInvoice.customerId || ''
+                ]
+              );
+
+              // Update SQLite fund balance
+              await localDb.run(
+                "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
+                [Number(activePrintData.paidAmount), defaultFund.id]
+              );
+            } catch (sqliteErr) {
+              console.error("Failed to write standard payment to SQLite:", sqliteErr);
+            }
+          }
+        }
       }
 
       await batch.commit();
@@ -1262,7 +1388,54 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                         {remainingCostForSelection.toFixed(2)} <span className="text-xs text-gray-500 font-sans">{selectedInvoice.currency || 'USD'}</span>
                       </p>
                     </div>
+
+                    {/* Vertical Separator */}
+                    <div className="hidden sm:block w-px h-6 bg-white/10" />
+
+                    {/* 4. Other Payment Method Button */}
+                    <div className="text-right flex items-end">
+                      <button
+                        onClick={() => {
+                          setModalPaymentType('cash');
+                          const cashFunds = funds.filter(f => f.type === 'cash');
+                          if (cashFunds.length > 0) {
+                            setModalSelectedFundId(cashFunds[0].id);
+                          } else if (funds.length > 0) {
+                            setModalSelectedFundId(funds[0].id);
+                          }
+                          setModalAmount(remainingCostForSelection > 0 ? remainingCostForSelection : 0);
+                          setModalNotes('');
+                          setShowOtherPaymentModal(true);
+                        }}
+                        className={`h-9 px-3 rounded-lg border text-xs font-bold font-cairo flex items-center gap-1.5 transition-all cursor-pointer ${
+                          otherPayment?.isActive
+                            ? 'bg-purple-900/40 border-purple-500 text-purple-400 hover:bg-purple-900/60'
+                            : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                        }`}
+                      >
+                        <Wallet size={14} />
+                        <span>{otherPayment?.isActive ? 'تعديل طريقة دفع أخرى' : 'طريقة دفع أخرى'}</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Other Payment Status Banner */}
+                  {otherPayment && otherPayment.isActive && (
+                    <div className="mt-2 p-2 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between text-right w-full">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="text-purple-400 animate-pulse animate-duration-1000" size={16} />
+                        <span className="text-xs font-bold text-purple-300 font-cairo">
+                          تم تفعيل طريقة دفع أخرى: {otherPayment.amount} {otherPayment.currency} عبر {otherPayment.fundName}
+                        </span>
+                      </div>
+                      <button 
+                        onClick={() => setOtherPayment(null)}
+                        className="text-rose-400 hover:text-rose-300 text-xs font-bold font-cairo cursor-pointer bg-transparent border-none outline-none"
+                      >
+                        إلغاء طريقة الدفع
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action Button & Metadata */}
@@ -1548,6 +1721,164 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
           </div>
         )}
       </div>
+
+      {/* Other Payment Method Modal */}
+      {showOtherPaymentModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" dir="rtl">
+          <div className="bg-[#1c1c1c] w-full max-w-md rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col animate-fade-in">
+            {/* Header */}
+            <div className="p-5 border-b border-white/5 flex items-center justify-between bg-black/20">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
+                  <Wallet size={18} />
+                </div>
+                <h3 className="text-sm font-black text-white font-cairo">طريقة دفع أخرى مستقلة</h3>
+              </div>
+              <button 
+                onClick={() => setShowOtherPaymentModal(false)}
+                className="p-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-all cursor-pointer bg-transparent border-none outline-none"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 space-y-4 flex-1">
+              {/* 1. Payment Type Selection */}
+              <div>
+                <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 font-cairo text-right">نوع طريقة الدفع</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalPaymentType('cash');
+                      const cashFunds = funds.filter(f => f.type === 'cash');
+                      if (cashFunds.length > 0) {
+                        setModalSelectedFundId(cashFunds[0].id);
+                      }
+                    }}
+                    className={`py-2 px-4 rounded-xl border text-xs font-bold font-cairo transition-all cursor-pointer ${
+                      modalPaymentType === 'cash'
+                        ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/25'
+                        : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    نقدي (صندوق مال)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={funds.filter(f => f.type === 'bank').length === 0}
+                    onClick={() => {
+                      setModalPaymentType('bank');
+                      const bankFunds = funds.filter(f => f.type === 'bank');
+                      if (bankFunds.length > 0) {
+                        setModalSelectedFundId(bankFunds[0].id);
+                      }
+                    }}
+                    className={`py-2 px-4 rounded-xl border text-xs font-bold font-cairo transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                      modalPaymentType === 'bank'
+                        ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/25'
+                        : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    بنكي (حساب بنكي)
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Target Fund Dropdown */}
+              <div>
+                <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">الصندوق / الحساب المستهدف</label>
+                <select
+                  value={modalSelectedFundId}
+                  onChange={(e) => setModalSelectedFundId(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-200 focus:outline-none focus:border-purple-500 font-mono"
+                >
+                  {funds
+                    .filter(f => f.type === modalPaymentType)
+                    .map(f => (
+                      <option key={f.id} value={f.id} className="bg-[#1c1c1c] font-bold text-right">
+                        {f.name} ({f.currency}) - الرصيد: {f.balance?.toLocaleString()}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* 3. Amount Field */}
+              <div>
+                <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">المبلغ المدفوع بعملته الفعلية</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    dir="ltr"
+                    lang="en"
+                    value={modalAmount || ''}
+                    onFocus={e => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      const parts = val.split('.');
+                      if (parts.length > 2) return;
+                      let num = parseFloat(val);
+                      if (isNaN(num)) num = 0;
+                      setModalAmount(num);
+                    }}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-purple-500 text-center text-purple-400"
+                    placeholder="0.00"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500 font-mono">
+                    {funds.find(f => f.id === modalSelectedFundId)?.currency || 'USD'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Notes Field */}
+              <div>
+                <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">ملاحظات دفع إضافية</label>
+                <input
+                  type="text"
+                  value={modalNotes}
+                  onChange={(e) => setModalNotes(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-200 focus:outline-none focus:border-purple-500 font-cairo text-right"
+                  placeholder="مثال: دفعة مقابل كذا دولار أو يورو..."
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/5 bg-black/20 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowOtherPaymentModal(false)}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 font-bold rounded-xl text-xs font-cairo transition-all cursor-pointer"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetFund = funds.find(f => f.id === modalSelectedFundId);
+                  if (targetFund) {
+                    setOtherPayment({
+                      fundId: targetFund.id,
+                      fundName: targetFund.name,
+                      amount: modalAmount,
+                      currency: targetFund.currency,
+                      notes: modalNotes.trim(),
+                      type: modalPaymentType,
+                      isActive: true
+                    });
+                    setShowOtherPaymentModal(false);
+                  }
+                }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs font-cairo transition-all shadow-lg shadow-purple-600/25 cursor-pointer"
+              >
+                تأكيد الدفع الخاص
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

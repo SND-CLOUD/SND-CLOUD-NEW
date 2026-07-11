@@ -271,21 +271,44 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
       const invItems = items.filter(it => it.invoiceNumber === inv.invoiceNumber);
       const actualCost = getInvoiceActualCost(invItems);
 
-      // Merge debit (invoice cost) and credit (amount paid on it) into a single row
+      // Row 1: Invoice debit
       entries.push({
-        id: `inv-${inv.id}`,
+        id: `inv-cost-${inv.id}`,
         date: inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now()),
         type: 'فاتورة صيانة',
         label: 'فاتورة صيانة أجهزة فنية',
         reference: String(inv.invoiceNumber).replace(/#/g, ''),
         notes: inv.notes || 'خدمات صيانة وقطع غيار للأجهزة المستلمة والمنجزة بالكامل',
         debit: actualCost,
-        credit: Number(inv.amountPaid || 0)
+        credit: 0
       });
+
+      // Row 2: Payment credit (Separate Row - Option 2)
+      const amtPaid = Number(inv.amountPaid || 0);
+      if (amtPaid > 0) {
+        const baseDate = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt || Date.now());
+        const paymentDate = new Date(baseDate.getTime() + 1000); // 1 second after invoice
+        entries.push({
+          id: `inv-payment-${inv.id}`,
+          date: paymentDate,
+          type: 'سداد فاتورة',
+          label: `فئة سداد في الفاتورة رقم ${String(inv.invoiceNumber).replace(/#/g, '')}`,
+          reference: '', // Empty reference ("لا يذكر فيه رقم سند")
+          notes: 'مقبوضات مبيعات وصيانة مرجعة بالفاتورة',
+          debit: 0,
+          credit: amtPaid
+        });
+      }
     });
 
-    // 2. Get separate receipts and payments
-    const customerTransactions = transactions.filter(tx => tx.customerId === customerId);
+    // 2. Get separate receipts and payments (filtering out reversed/reversals for customers)
+    const customerTransactions = transactions.filter(tx => 
+      tx.customerId === customerId &&
+      !tx.isReversed &&
+      !tx.isReversal &&
+      tx.status !== 'reversed' &&
+      tx.status !== 'reversal'
+    );
     customerTransactions.forEach(tx => {
       const txDate = tx.timestamp?.toDate ? tx.timestamp.toDate() : (tx.timestamp ? new Date(tx.timestamp) : new Date());
       if (tx.type === 'receipt') {
