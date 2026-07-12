@@ -182,6 +182,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [previewData, setPreviewData] = useState<{ type: 'invoice' | 'voucher' | 'statement' | 'table'; data: any } | null>(null);
+  const [reversalTxToConfirm, setReversalTxToConfirm] = useState<VaultTransaction | null>(null);
 
   const [globalSearch, setGlobalSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -851,23 +852,27 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   };
 
   const handleReverseEntry = async (tx: VaultTransaction) => {
-    if (isPosting) return;
+    console.log("handleReverseEntry called", { tx, isPosting, userRole: user.role });
+    if (isPosting) {
+      console.log("handleReverseEntry aborted: isPosting is true");
+      return;
+    }
     
     // Check permissions
-    if (user.role !== 'admin' && user.role !== 'manager') {
-      setErrorMsg('عذراً، فقط مدراء النظام المخولين لديهم صلاحية عكس القيد');
+    if (user.role !== 'admin' && user.role !== 'manager' && user.role !== 'data_entry') {
+      console.log("handleReverseEntry aborted: permission denied", user.role);
+      setErrorMsg('عذراً، فقط المستخدمين المخولين لديهم صلاحية عكس القيد');
       return;
     }
 
     if (tx.isReversed || tx.isReversal || tx.status === 'reversed' || tx.status === 'reversal') {
+      console.log("handleReverseEntry aborted: already reversed", tx);
       setErrorMsg('هذا القيد معكوس بالفعل أو أنه قيد عكسي ولا يمكن عكسه مجدداً');
       return;
     }
 
-    const confirmAction = window.confirm(`هل أنت متأكد من عكس القيد رقم ${tx.voucherNumber} بقيمة ${Math.abs(tx.amount)} ${tx.currency}؟`);
-    if (!confirmAction) return;
-
     setIsPosting(true);
+    console.log("handleReverseEntry proceeding to post reversal");
     try {
       const timestampIso = new Date().toISOString();
       const reversalTxId = `vtx-${Math.random().toString(36).substring(2, 8)}`;
@@ -1816,9 +1821,12 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                 <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20" title={tx.notes}>
                                   قيد عكسي
                                 </span>
-                              ) : (user.role === 'admin' || user.role === 'manager') ? (
+                              ) : (user.role === 'admin' || user.role === 'manager' || user.role === 'data_entry') ? (
                                 <button
-                                  onClick={() => handleReverseEntry(tx)}
+                                  onClick={() => {
+                                    console.log("Setting transaction for custom confirmation modal:", tx.id);
+                                    setReversalTxToConfirm(tx);
+                                  }}
                                   className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500 hover:bg-amber-600 hover:text-white border border-amber-500/20 transition-all cursor-pointer"
                                 >
                                   عكس القيد
@@ -3645,6 +3653,68 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
           shopConfig={shopConfig}
           user={user}
         />
+      )}
+
+      {reversalTxToConfirm && (
+        <div className="fixed inset-0 z-[150] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" dir="rtl">
+          <div className="bg-[#121212] border border-white/10 rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+              <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-xl">
+                <ArrowRightLeft size={22} className="rotate-90" />
+              </div>
+              <div className="text-right">
+                <h3 className="text-sm font-black text-white font-cairo">تأكيد عملية عكس القيد</h3>
+                <p className="text-[10px] text-gray-400 font-cairo mt-0.5">يرجى تأكيد رغبتكم في عكس هذا القيد المالي</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 bg-white/5 p-4 rounded-xl text-right">
+              <div className="flex justify-between items-center text-xs font-cairo">
+                <span className="text-gray-400">رقم السند:</span>
+                <span className="font-mono font-bold text-amber-500">#{reversalTxToConfirm.voucherNumber}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs font-cairo">
+                <span className="text-gray-400">اسم العميل / الجهة:</span>
+                <span className="font-bold text-white">{reversalTxToConfirm.customerName}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs font-cairo">
+                <span className="text-gray-400">نوع العملية:</span>
+                <span className="font-bold text-gray-200">{reversalTxToConfirm.transactionCategory || (reversalTxToConfirm.type === 'receipt' ? 'قبض' : 'صرف')}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs font-cairo">
+                <span className="text-gray-400">المبلغ:</span>
+                <span className="font-mono font-black text-rose-500">{Math.abs(reversalTxToConfirm.amount).toLocaleString('en-US')} {reversalTxToConfirm.currency}</span>
+              </div>
+              <div className="flex justify-between items-start text-xs font-cairo border-t border-white/5 pt-2 mt-2" dir="rtl">
+                <span className="text-gray-400 shrink-0 ml-4">البيان / الملاحظات:</span>
+                <span className="text-slate-300 font-medium break-all">{reversalTxToConfirm.notes || 'لا يوجد'}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isPosting}
+                onClick={async () => {
+                  await handleReverseEntry(reversalTxToConfirm);
+                  setReversalTxToConfirm(null);
+                }}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold font-cairo transition-all cursor-pointer shadow-lg shadow-rose-600/20 active:scale-95 flex items-center justify-center gap-2"
+              >
+                {isPosting ? <Loader2 size={16} className="animate-spin" /> : null}
+                <span>تأكيد وعكس القيد</span>
+              </button>
+              <button
+                type="button"
+                disabled={isPosting}
+                onClick={() => setReversalTxToConfirm(null)}
+                className="flex-1 py-3 bg-[#1e1e1e] hover:bg-[#252525] border border-white/5 disabled:opacity-50 text-gray-300 rounded-xl text-xs font-bold font-cairo transition-all cursor-pointer text-center"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
