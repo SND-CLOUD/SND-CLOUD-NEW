@@ -54,56 +54,6 @@ export const serverTimestamp = () => ({
   toISOString: function() { return this._date.toISOString(); }
 });
 
-export const parseDateSafe = (val: any): Date | null => {
-  if (!val) return null;
-  if (val instanceof Date) return val;
-  
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      try {
-        const obj = JSON.parse(trimmed);
-        return parseDateSafe(obj);
-      } catch (e) {
-        // Ignored
-      }
-    }
-    if (/^\d+$/.test(trimmed)) {
-      const num = parseInt(trimmed, 10);
-      return new Date(num.toString().length <= 10 ? num * 1000 : num);
-    }
-    const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  if (typeof val === 'object') {
-    if (typeof val.toDate === 'function') {
-      try {
-        return val.toDate();
-      } catch (e) {}
-    }
-    if (typeof val.seconds === 'number') {
-      return new Date(val.seconds * 1000);
-    }
-    if (typeof val._seconds === 'number') {
-      return new Date(val._seconds * 1000);
-    }
-    if (val._date) {
-      return parseDateSafe(val._date);
-    }
-    if (val.toDate && typeof val.toDate === 'object') {
-      // Sometimes it could be stringified
-      return parseDateSafe(val.toDate);
-    }
-  }
-
-  if (typeof val === 'number') {
-    return new Date(val.toString().length <= 10 ? val * 1000 : val);
-  }
-
-  return null;
-};
-
 export const getDoc = async (docRef: any) => {
   const table = docRef.name;
   const id = docRef.id;
@@ -125,9 +75,9 @@ export const getDoc = async (docRef: any) => {
     const data = { ...res.values[0] };
     // Wrap dates
     ['createdAt', 'updatedAt', 'timestamp', 'actionDate', 'deliveredAt', 'output_datetime'].forEach(field => {
-      if (data[field]) {
-        const d = parseDateSafe(data[field]);
-        if (d && !isNaN(d.getTime())) {
+      if (data[field] && (typeof data[field] === 'string' || typeof data[field] === 'number')) {
+        const d = new Date(typeof data[field] === 'number' && data[field].toString().length <= 10 ? data[field] * 1000 : data[field]);
+        if (!isNaN(d.getTime())) {
           data[field] = {
             toDate: () => d,
             toMillis: () => d.getTime(),
@@ -179,9 +129,9 @@ export const getDocs = async (queryRef: any) => {
        try { docData.permissions = JSON.parse(docData.permissions); } catch(e) {}
     }
     ['createdAt', 'updatedAt', 'timestamp', 'actionDate', 'deliveredAt', 'output_datetime'].forEach(field => {
-      if (docData[field]) {
-        const d = parseDateSafe(docData[field]);
-        if (d && !isNaN(d.getTime())) {
+      if (docData[field] && (typeof docData[field] === 'string' || typeof docData[field] === 'number')) {
+        const d = new Date(typeof docData[field] === 'number' && docData[field].toString().length <= 10 ? docData[field] * 1000 : docData[field]);
+        if (!isNaN(d.getTime())) {
           docData[field] = {
             toDate: () => d,
             toMillis: () => d.getTime(),
@@ -341,9 +291,9 @@ export const onSnapshot = (queryRef: any, callback: any, errorCallback?: any) =>
              try { docData.permissions = JSON.parse(docData.permissions); } catch(e) {}
           }
           ['createdAt', 'updatedAt', 'timestamp', 'actionDate', 'deliveredAt', 'output_datetime'].forEach(field => {
-            if (docData[field]) {
-              const d = parseDateSafe(docData[field]);
-              if (d && !isNaN(d.getTime())) {
+            if (docData[field] && (typeof docData[field] === 'string' || typeof docData[field] === 'number')) {
+              const d = new Date(typeof docData[field] === 'number' && docData[field].toString().length <= 10 ? docData[field] * 1000 : docData[field]);
+              if (!isNaN(d.getTime())) {
                 docData[field] = {
                   toDate: () => d,
                   toMillis: () => d.getTime(),
@@ -398,9 +348,9 @@ export const onSnapshot = (queryRef: any, callback: any, errorCallback?: any) =>
           try { docData.permissions = JSON.parse(docData.permissions); } catch(e) {}
         }
         ['createdAt', 'updatedAt', 'timestamp', 'actionDate', 'deliveredAt', 'output_datetime'].forEach(field => {
-          if (docData[field]) {
-            const d = parseDateSafe(docData[field]);
-            if (d && !isNaN(d.getTime())) {
+          if (docData[field] && (typeof docData[field] === 'string' || typeof docData[field] === 'number')) {
+            const d = new Date(typeof docData[field] === 'number' && docData[field].toString().length <= 10 ? docData[field] * 1000 : docData[field]);
+            if (!isNaN(d.getTime())) {
               docData[field] = {
                 toDate: () => d,
                 toMillis: () => d.getTime(),

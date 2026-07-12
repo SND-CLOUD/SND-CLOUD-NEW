@@ -1010,16 +1010,9 @@ export default function PrintPreviewOverlay({
   const formatDate = (dateObj: any) => {
     if (!dateObj) return '---';
     try {
-      let d: Date;
-      if (dateObj.toDate) {
-        d = dateObj.toDate();
-      } else if (typeof dateObj.seconds === 'number') {
-        d = new Date(dateObj.seconds * 1000);
-      } else {
-        d = new Date(dateObj);
-      }
-      if (isNaN(d.getTime())) return '---';
-      return d.toLocaleDateString('ar-YE');
+      if (dateObj.toDate) return dateObj.toDate().toLocaleDateString('ar-YE');
+      if (dateObj.seconds) return new Date(dateObj.seconds * 1000).toLocaleDateString('ar-YE');
+      return new Date(dateObj).toLocaleDateString('ar-YE');
     } catch (e) {
       return '---';
     }
@@ -1028,16 +1021,9 @@ export default function PrintPreviewOverlay({
   const formatTime = (dateObj: any) => {
     if (!dateObj) return '---';
     try {
-      let d: Date;
-      if (dateObj.toDate) {
-        d = dateObj.toDate();
-      } else if (typeof dateObj.seconds === 'number') {
-        d = new Date(dateObj.seconds * 1000);
-      } else {
-        d = new Date(dateObj);
-      }
-      if (isNaN(d.getTime())) return '---';
-      return d.toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
+      if (dateObj.toDate) return dateObj.toDate().toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
+      if (dateObj.seconds) return new Date(dateObj.seconds * 1000).toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
+      return new Date(dateObj).toLocaleTimeString('ar-YE', { hour12: true, hour: '2-digit', minute: '2-digit' });
     } catch (e) {
       return '---';
     }

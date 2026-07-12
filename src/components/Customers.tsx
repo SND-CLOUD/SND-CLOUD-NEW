@@ -4,7 +4,7 @@ import { sharePdfFile, openWhatsApp, sendUniversalReminder } from '../lib/shareH
 import PrintPreviewOverlay from './PrintPreviewOverlay';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, serverTimestamp, parseDateSafe } from '../firebase';
+import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, updateDoc, writeBatch, serverTimestamp } from '../firebase';
 import { db } from '../firebase';
 import { User, Phone, Smartphone, AlertTriangle, CheckCircle, Package, ArrowLeft, ArrowUpRight, ArrowRight, LogOut, Search, FileText, ChevronLeft, Eye, Clock, DollarSign, X, Users, ArrowUpDown, Plus, Edit2, Check, Building, Mail, Printer, UserPlus, MessageCircle, MapPin, Facebook } from 'lucide-react';
 import { Customer, Invoice, InvoiceItem, User as SystemUser, ShopConfig } from '../types';
@@ -15,6 +15,7 @@ import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
 import { sanitizeDocumentStyles, sanitizeElementInlineStyles, cleanOklchInStyleText } from '../lib/html2canvasHelper';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { parseDate, formatDateTime } from '../lib/dateUtils';
 
 const WhatsAppIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -235,7 +236,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     // Payments
     const separatePayments = transactions
       .filter(tx => tx.customerId === customerId && tx.type === 'payment' && !tx.isReversed && !tx.isReversal && tx.status !== 'reversed' && tx.status !== 'reversal')
-      .reduce((sum, tx) => sum + (tx.liabilityAmount || Math.abs(Number(tx.amount || 0))), 0);
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
 
     return separateReceipts - separatePayments;
   };
@@ -264,9 +265,11 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
       const invItems = items.filter(it => it.invoiceNumber === inv.invoiceNumber);
       const actualCost = getInvoiceActualCost(invItems);
       // Row 1: Invoice debit
+      const invDate = parseDate(inv.createdAt);
+      
       entries.push({
         id: `inv-cost-${inv.id}`,
-        date: parseDateSafe(inv.createdAt) || new Date(),
+        date: invDate,
         type: 'فاتورة صيانة',
         label: 'فاتورة صيانة أجهزة فنية',
         reference: String(inv.invoiceNumber).replace(/#/g, ''),
@@ -286,7 +289,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     );
 
     customerTransactions.forEach(tx => {
-      const txDate = parseDateSafe(tx.timestamp) || new Date();
+      const txDate = parseDate(tx.timestamp);
+
       if (tx.type === 'receipt') {
         const isLinkedToInvoice = !!tx.invoiceNumber;
         const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
@@ -319,7 +323,6 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
           credit: liabilityAmount
         });
       } else if (tx.type === 'payment') {
-        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
@@ -327,14 +330,14 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
           label: tx.transactionCategory || 'سند صرف للعميل',
           reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
           notes: tx.notes || '',
-          debit: liabilityAmount,
+          debit: Math.abs(Number(tx.amount || 0)),
           credit: 0
         });
       }
     });
 
     // 3. Sort chronologically
-    entries.sort((a, b) => a.date.getTime() - b.date.getTime());
+    entries.sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0));
 
     // 4. Filter entries that have active financial impact (debit > 0 or credit > 0)
     const activeEntries = entries.filter(e => e.debit > 0.001 || e.credit > 0.001);
@@ -707,12 +710,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                 onClick={() => {
                   const entries = getStatementEntries(selectedCustomer.id!);
                   const formattedEntries = entries.map((entry) => {
-                    const year = entry.date.getFullYear();
-                    const month = String(entry.date.getMonth() + 1).padStart(2, '0');
-                    const day = String(entry.date.getDate()).padStart(2, '0');
-                    const hours = String(entry.date.getHours()).padStart(2, '0');
-                    const minutes = String(entry.date.getMinutes()).padStart(2, '0');
-                    const formattedDate = `${year}/${month}/${day} ${hours}:${minutes}`;
+                    const formattedDate = formatDateTime(entry.date);
 
                     return {
                       ...entry,
@@ -831,7 +829,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                     <span className="text-[10px] text-gray-500 font-bold block font-cairo">تاريخ التسجيل بالمنظومة:</span>
                     <div className="customer-static-input w-full bg-[#161616] border border-white/5 rounded-xl px-3.5 py-2 text-[11px] font-bold text-gray-400 cursor-not-allowed font-cairo">
                       {selectedCustomer.createdAt
-                        ? (function(){ const d = new Date(selectedCustomer.createdAt && typeof selectedCustomer.createdAt.toDate === 'function' ? selectedCustomer.createdAt.toDate() : (selectedCustomer.createdAt.seconds ? selectedCustomer.createdAt.seconds * 1000 : selectedCustomer.createdAt)); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }); })()
+                        ? parseDate(selectedCustomer.createdAt).toLocaleDateString('ar-YE', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })
                         : 'تاريخ قديم/مستورد'
                       }
                     </div>
@@ -1072,12 +1070,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                   onClick={() => {
                     const entries = getStatementEntries(selectedCustomer.id!);
                     const formattedEntries = entries.map((entry) => {
-                      const year = entry.date.getFullYear();
-                      const month = String(entry.date.getMonth() + 1).padStart(2, '0');
-                      const day = String(entry.date.getDate()).padStart(2, '0');
-                      const hours = String(entry.date.getHours()).padStart(2, '0');
-                      const minutes = String(entry.date.getMinutes()).padStart(2, '0');
-                      const formattedDate = `${year}/${month}/${day} ${hours}:${minutes}`;
+                      const formattedDate = formatDateTime(entry.date);
 
                       return {
                         ...entry,
@@ -1213,7 +1206,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                               <td className="px-6 py-4 font-mono font-bold text-white">{inv.invoiceNumber}</td>
                               <td className="px-6 py-4 font-mono text-slate-400">
                                 {inv.createdAt 
-                                  ? (function(){ const d = new Date(inv.createdAt && typeof inv.createdAt.toDate === 'function' ? inv.createdAt.toDate() : (inv.createdAt.seconds ? inv.createdAt.seconds * 1000 : inv.createdAt)); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE'); })()
+                                  ? (function(){ const d = parseDate(inv.createdAt); return d ? d.toLocaleDateString('ar-YE') : '---'; })()
                                   : '---'
                                 }
                               </td>
@@ -1351,7 +1344,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                         </td>
                         <td className="px-1 py-1 font-mono text-slate-400 text-[9px] sm:text-[10px] text-center whitespace-nowrap">
                           {cust.createdAt
-                            ? (function(){ const d = new Date(cust.createdAt && typeof cust.createdAt.toDate === 'function' ? cust.createdAt.toDate() : (cust.createdAt.seconds ? cust.createdAt.seconds * 1000 : cust.createdAt)); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE', { year: '2-digit', month: 'numeric', day: 'numeric' }); })()
+                            ? (function(){ const d = parseDate(cust.createdAt); return d ? d.toLocaleDateString('ar-YE', { year: '2-digit', month: 'numeric', day: 'numeric' }) : '---'; })()
                             : '---'
                           }
                         </td>
@@ -1446,7 +1439,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                       <span className="text-[10px] text-gray-500 font-bold block font-cairo">تاريخ التسجيل:</span>
                       <div className="customer-static-input w-full bg-[#161616] border border-white/5 rounded-xl px-3.5 py-2 text-[11px] font-bold text-gray-400 cursor-not-allowed font-cairo">
                         {selectedCustomer.createdAt
-                          ? (function(){ const d = new Date(selectedCustomer.createdAt && typeof selectedCustomer.createdAt.toDate === 'function' ? selectedCustomer.createdAt.toDate() : (selectedCustomer.createdAt.seconds ? selectedCustomer.createdAt.seconds * 1000 : selectedCustomer.createdAt)); return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE'); })()
+                          ? (function(){ const d = parseDate(selectedCustomer.createdAt); return d ? d.toLocaleDateString('ar-YE') : '---'; })()
                           : '---'
                         }
                       </div>
@@ -1710,8 +1703,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
           
           const formattedDateStr = inv.createdAt 
             ? (function(){
-                const d = new Date(inv.createdAt && typeof inv.createdAt.toDate === 'function' ? inv.createdAt.toDate() : (inv.createdAt.seconds ? inv.createdAt.seconds * 1000 : inv.createdAt));
-                return isNaN(d.getTime()) ? '' : d.toLocaleDateString('ar-YE');
+                const d = parseDate(inv.createdAt);
+                return d ? d.toLocaleDateString('ar-YE') : '';
               })()
             : '';
 
@@ -1846,8 +1839,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                               <td className="px-3.5 py-2.5 font-mono text-slate-400 border-l border-white/5 whitespace-nowrap text-[11px]">
                                 {inv.createdAt 
                                   ? (function(){ 
-                                      const d = new Date(inv.createdAt && typeof inv.createdAt.toDate === 'function' ? inv.createdAt.toDate() : (inv.createdAt.seconds ? inv.createdAt.seconds * 1000 : inv.createdAt)); 
-                                      return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+                                      const d = parseDate(inv.createdAt); 
+                                      return d ? d.toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '---'; 
                                     })()
                                   : '---'
                                 }
@@ -1967,8 +1960,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                       <span className="text-[11px] text-gray-300 font-bold">
                         {selectedLogInvoice.createdAt 
                           ? (function(){ 
-                              const d = new Date(selectedLogInvoice.createdAt && typeof selectedLogInvoice.createdAt.toDate === 'function' ? selectedLogInvoice.createdAt.toDate() : (selectedLogInvoice.createdAt.seconds ? selectedLogInvoice.createdAt.seconds * 1000 : selectedLogInvoice.createdAt)); 
-                              return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' }); 
+                              const d = parseDate(selectedLogInvoice.createdAt); 
+                              return d ? d.toLocaleDateString('ar-YE', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '---'; 
                             })()
                           : '---'
                         }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where, getDocs, doc, getDoc, parseDateSafe } from '../firebase';
+import { collection, onSnapshot, query, where, getDocs, doc, getDoc } from '../firebase';
 import { db } from '../firebase';
 import { 
   Search, FileText, User, Calendar, Loader2, AlertCircle, ArrowLeft, 
@@ -445,12 +445,12 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
     // Separate receipts
     const separateReceipts = transactions
       .filter(tx => tx.customerId === customerId && tx.type === 'receipt')
-      .reduce((sum, tx) => sum + (tx.liabilityAmount || Math.abs(Number(tx.amount || 0))), 0);
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
 
     // Separate payments
     const separatePayments = transactions
       .filter(tx => tx.customerId === customerId && tx.type === 'payment')
-      .reduce((sum, tx) => sum + (tx.liabilityAmount || Math.abs(Number(tx.amount || 0))), 0);
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
 
     return invoicesPaid + separateReceipts - separatePayments;
   };
@@ -467,7 +467,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
 
       entries.push({
         id: `inv-${inv.id}`,
-        date: parseDateSafe(inv.createdAt) || new Date(),
+        date: inv.createdAt?.toDate ? inv.createdAt.toDate() : (inv.createdAt?.seconds ? new Date(inv.createdAt.seconds * 1000) : new Date(inv.createdAt || Date.now())),
         type: 'فاتورة صيانة',
         reference: String(inv.invoiceNumber).replace(/#/g, ''),
         details: inv.notes?.trim() || 'خدمات صيانة وقطع غيار للأجهزة المستلمة والمنجزة بالكامل',
@@ -479,9 +479,8 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
     // Receipts and Payments
     const customerTransactions = transactions.filter(tx => tx.customerId === customerId);
     customerTransactions.forEach(tx => {
-      const txDate = parseDateSafe(tx.timestamp) || new Date();
+      const txDate = tx.timestamp?.toDate ? tx.timestamp.toDate() : (tx.timestamp?.seconds ? new Date(tx.timestamp.seconds * 1000) : new Date(tx.timestamp || Date.now()));
       if (tx.type === 'receipt') {
-        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
@@ -489,17 +488,16 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
           reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
           details: tx.notes?.trim() || tx.transactionCategory || 'قبض نقدي تحت الحساب',
           debit: 0,
-          credit: liabilityAmount
+          credit: Math.abs(Number(tx.amount || 0))
         });
       } else if (tx.type === 'payment') {
-        const liabilityAmount = tx.liabilityAmount || Math.abs(Number(tx.amount || 0));
         entries.push({
           id: `tx-${tx.id}`,
           date: txDate,
           type: 'سند صرف',
           reference: String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, ''),
           details: tx.notes?.trim() || tx.transactionCategory || 'صرف مالي أو استرجاع نقدي',
-          debit: liabilityAmount,
+          debit: Math.abs(Number(tx.amount || 0)),
           credit: 0
         });
       }
@@ -1224,15 +1222,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
                           فاتورة صيانة #{selectedInvoice.invoiceNumber}
                         </span>
                         <span className="text-xs text-gray-500 font-bold">
-                          {(() => {
-                            if (!selectedInvoice.createdAt) return '---';
-                            const d = selectedInvoice.createdAt?.toDate 
-                              ? selectedInvoice.createdAt.toDate() 
-                              : (selectedInvoice.createdAt?.seconds 
-                                  ? new Date(selectedInvoice.createdAt.seconds * 1000) 
-                                  : new Date(selectedInvoice.createdAt));
-                            return isNaN(d.getTime()) ? '---' : d.toLocaleDateString('ar-YE');
-                          })()}
+                          {selectedInvoice.createdAt?.toDate ? selectedInvoice.createdAt.toDate().toLocaleDateString('ar-YE') : '---'}
                         </span>
                       </div>
                       <h2 className="text-base font-black text-white font-cairo mt-1.5 flex items-center gap-2">
@@ -1462,15 +1452,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
                       <div className="flex justify-between items-center border-b border-white/[0.02] pb-1.5">
                         <span>تاريخ السند :</span>
                         <span className="text-gray-300 font-mono">
-                          {(() => {
-                            if (!selectedVoucher.timestamp) return '---';
-                            const d = selectedVoucher.timestamp?.toDate 
-                              ? selectedVoucher.timestamp.toDate() 
-                              : (selectedVoucher.timestamp?.seconds 
-                                  ? new Date(selectedVoucher.timestamp.seconds * 1000) 
-                                  : new Date(selectedVoucher.timestamp));
-                            return isNaN(d.getTime()) ? '---' : d.toLocaleString('ar-YE', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                          })()}
+                          {selectedVoucher.timestamp?.toDate ? selectedVoucher.timestamp.toDate().toLocaleString('ar-YE') : '---'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center border-b border-white/[0.02] pb-1.5">
