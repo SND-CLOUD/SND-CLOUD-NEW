@@ -101,6 +101,15 @@ function parseEngineerReport(reportStr: string) {
   };
 }
 
+function normalizeCurrency(curr: string): string {
+  if (!curr) return 'USD';
+  const c = curr.trim().toUpperCase();
+  if (c === 'USD' || c === 'دولار' || c === '$') return 'USD';
+  if (c === 'SAR' || c === 'ريال سعودي' || c === 'سعودي' || c === 'ر.س') return 'SAR';
+  if (c === 'YER' || c === 'ريال يمني' || c === 'يمني' || c === 'ر.ي') return 'YER';
+  return c;
+}
+
 export default function DeviceExit({ user, onBack }: { user: User, onBack: () => void }) {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -163,6 +172,8 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
     type: 'cash' | 'bank';
     bankDetails?: { depositorName: string; referenceNumber: string };
     isActive: boolean;
+    invoiceRate?: string;
+    paymentRate?: string;
   } | null>(null);
 
   const [modalPaymentType, setModalPaymentType] = useState<'cash' | 'bank'>('cash');
@@ -171,6 +182,8 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   const [modalNotes, setModalNotes] = useState<string>('');
   const [modalDepositorName, setModalDepositorName] = useState<string>('');
   const [modalReferenceNumber, setModalReferenceNumber] = useState<string>('');
+  const [modalInvoiceRate, setModalInvoiceRate] = useState<string>('1');
+  const [modalPaymentRate, setModalPaymentRate] = useState<string>('1');
 
   useEffect(() => {
     const fetchFunds = async () => {
@@ -187,6 +200,31 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   useEffect(() => {
     setOtherPayment(null);
   }, [selectedInvoice]);
+
+  // Live exchange rate sync based on currency selection
+  useEffect(() => {
+    if (!showOtherPaymentModal) return;
+    
+    const invoiceCurrency = selectedInvoice?.currency || 'USD';
+    const targetFund = funds.find(f => f.id === modalSelectedFundId);
+    const paymentCurrency = targetFund?.currency || 'USD';
+
+    if (normalizeCurrency(invoiceCurrency) === normalizeCurrency(paymentCurrency)) {
+      setModalInvoiceRate('1');
+      setModalPaymentRate('1');
+    } else {
+      // If previous rate was 1/1, we set sensible default or let it stay 1
+      if (modalInvoiceRate === '1' && modalPaymentRate === '1') {
+        const normInv = normalizeCurrency(invoiceCurrency);
+        const normPay = normalizeCurrency(paymentCurrency);
+        if (normInv === 'USD' && normPay === 'SAR') {
+          setModalPaymentRate('3.8');
+        } else {
+          setModalPaymentRate('1');
+        }
+      }
+    }
+  }, [modalSelectedFundId, showOtherPaymentModal, selectedInvoice?.currency, funds]);
 
   const [activePrintData, setActivePrintData] = useState<{
     invoice: Invoice;
@@ -445,6 +483,24 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   const total = subtotal - discount;
 
   const remainingCostForSelection = Math.max(0, total - exitPaidAmount);
+
+  const invoiceCurrency = selectedInvoice?.currency || 'USD';
+  const targetFund = funds.find(f => f.id === modalSelectedFundId);
+  const paymentCurrency = targetFund?.currency || 'USD';
+  const isSameCurrency = normalizeCurrency(invoiceCurrency) === normalizeCurrency(paymentCurrency);
+
+  const rate1 = parseFloat(modalInvoiceRate) || 1;
+  const rate2 = parseFloat(modalPaymentRate) || 1;
+  const payAmt = parseFloat(modalAmount as any) || 0;
+  
+  let convertedAmount = payAmt;
+  if (!isSameCurrency) {
+    if (rate2 > 0) {
+      convertedAmount = Math.round((payAmt * (rate1 / rate2)) * 100) / 100;
+    } else {
+      convertedAmount = 0;
+    }
+  }
   
   const handleShowPreview = () => {
     if (!selectedInvoice || selectedItemIds.size === 0 || exitPaidAmount > total) return;
@@ -534,6 +590,14 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
               ? JSON.stringify(otherPayment.bankDetails)
               : '';
 
+            const exchangeRateText = otherPayment.invoiceRate && otherPayment.paymentRate
+              ? ` [سعر الصرف: ${otherPayment.invoiceRate} لعملة الفاتورة مقابل ${otherPayment.paymentRate} لعملة الدفع]`
+              : '';
+
+            const finalNotes = otherPayment.notes 
+              ? `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber} - ${otherPayment.notes}${exchangeRateText}` 
+              : `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}${exchangeRateText}`;
+
             await localDb.run(
               `INSERT INTO vault_transactions (
                 id, currency, amount, customerName, invoiceNumber,
@@ -553,7 +617,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 user?.id || 'admin',
                 timestampIso,
                 'receipt',
-                otherPayment.notes ? `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber} - ${otherPayment.notes}` : `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
+                finalNotes,
                 timestampIso,
                 nextNum,
                 'دفعة أجهزة',
@@ -587,7 +651,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 userId: user?.id || 'admin',
                 timestamp: new Date().getTime(),
                 type: 'receipt',
-                notes: otherPayment.notes ? `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber} - ${otherPayment.notes}` : `سداد في الفاتورة رقم ${selectedInvoice.invoiceNumber}`,
+                notes: finalNotes,
                 updatedAt: timestampIso,
                 voucherNumber: nextNum,
                 transactionCategory: 'دفعة أجهزة',
@@ -1432,6 +1496,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                           dir="ltr"
                           lang="en"
                           value={exitPaidAmount || ''}
+                          disabled={otherPayment?.isActive}
                           onFocus={e => e.target.select()}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9.]/g, '');
@@ -1442,7 +1507,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                             console.log("exitPaidAmount changed", num);
                             setExitPaidAmount(num);
                           }}
-                          className={`w-28 h-9 bg-emerald-950/30 border rounded-lg px-3 py-1.5 text-sm font-black focus:outline-none transition-all pl-8 font-mono text-center shadow-md ${
+                          className={`w-28 h-9 bg-emerald-950/30 border rounded-lg px-3 py-1.5 text-sm font-black focus:outline-none transition-all pl-8 font-mono text-center shadow-md disabled:opacity-60 disabled:cursor-not-allowed ${
                             exitPaidAmount > total 
                               ? "border-rose-500 text-rose-400 focus:border-rose-500 bg-rose-500/10 focus:ring-1 focus:ring-rose-500 shadow-rose-500/10" 
                               : "border-emerald-500/45 text-emerald-400 focus:border-emerald-500 bg-emerald-950/20 focus:ring-1 focus:ring-emerald-500 shadow-emerald-500/10"
@@ -1473,17 +1538,30 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                     <div className="text-right flex items-end">
                       <button
                         onClick={() => {
-                          setModalPaymentType('cash');
-                          const cashFunds = funds.filter(f => f.type === 'cash');
-                          if (cashFunds.length > 0) {
-                            setModalSelectedFundId(cashFunds[0].id);
-                          } else if (funds.length > 0) {
-                            setModalSelectedFundId(funds[0].id);
+                          if (otherPayment && otherPayment.isActive) {
+                            setModalPaymentType(otherPayment.type);
+                            setModalSelectedFundId(otherPayment.fundId);
+                            setModalAmount(otherPayment.amount);
+                            setModalNotes(otherPayment.notes || '');
+                            setModalDepositorName(otherPayment.bankDetails?.depositorName || '');
+                            setModalReferenceNumber(otherPayment.bankDetails?.referenceNumber || '');
+                            setModalInvoiceRate(otherPayment.invoiceRate || '1');
+                            setModalPaymentRate(otherPayment.paymentRate || '1');
+                          } else {
+                            setModalPaymentType('cash');
+                            const cashFunds = funds.filter(f => f.type === 'cash');
+                            if (cashFunds.length > 0) {
+                              setModalSelectedFundId(cashFunds[0].id);
+                            } else if (funds.length > 0) {
+                              setModalSelectedFundId(funds[0].id);
+                            }
+                            setModalAmount(0); // Default to 0
+                            setModalNotes('');
+                            setModalDepositorName('');
+                            setModalReferenceNumber('');
+                            setModalInvoiceRate('1');
+                            setModalPaymentRate('1');
                           }
-                          setModalAmount(0); // Default to 0
-                          setModalNotes('');
-                          setModalDepositorName('');
-                          setModalReferenceNumber('');
                           setShowOtherPaymentModal(true);
                         }}
                         className={`h-9 px-3 rounded-lg border text-xs font-bold font-cairo flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -1504,11 +1582,14 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       <div className="flex items-center gap-2">
                         <Wallet className="text-purple-400 animate-pulse animate-duration-1000" size={16} />
                         <span className="text-xs font-bold text-purple-300 font-cairo">
-                          تم تفعيل طريقة دفع أخرى: {otherPayment.amount} {otherPayment.currency} عبر {otherPayment.fundName}
+                          تم تفعيل طريقة دفع أخرى: {otherPayment.amount} {otherPayment.currency} (ما يعادل {exitPaidAmount} {selectedInvoice.currency || 'USD'}) عبر {otherPayment.fundName}
                         </span>
                       </div>
                       <button 
-                        onClick={() => setOtherPayment(null)}
+                        onClick={() => {
+                          setOtherPayment(null);
+                          setExitPaidAmount(0);
+                        }}
                         className="text-rose-400 hover:text-rose-300 text-xs font-bold font-cairo cursor-pointer bg-transparent border-none outline-none"
                       >
                         إلغاء طريقة الدفع
@@ -1532,7 +1613,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                     )}
                     <button 
                       onClick={handleShowPreview}
-                      disabled={selectedItemIds.size === 0 || exitPaidAmount > total}
+                      disabled={selectedItemIds.size === 0 || exitPaidAmount > total || (otherPayment?.isActive && (Number(exitPaidAmount) + Number(exitDiscountAmount)) === 0)}
                       className="w-full md:w-auto bg-orange-600 hover:bg-orange-700 text-white font-black px-6 py-2 rounded-xl transition-all shadow-lg shadow-orange-600/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 text-xs font-cairo"
                     >
                       <Save size={14} />
@@ -1811,7 +1892,9 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 <div className="p-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
                   <Wallet size={18} />
                 </div>
-                <h3 className="text-sm font-black text-white font-cairo">طريقة دفع أخرى مستقلة</h3>
+                <h3 className="text-sm font-black text-white font-cairo">
+                  طريقة دفع أخرى - المبلغ المستحق {remainingCostForSelection.toFixed(2)} <span className="text-xs font-sans text-gray-400">{selectedInvoice.currency || 'USD'}</span>
+                </h3>
               </div>
               <button 
                 onClick={() => setShowOtherPaymentModal(false)}
@@ -1822,15 +1905,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
             </div>
 
             {/* Content */}
-            <div className="p-5 space-y-4 flex-1">
-              {/* Info Banner */}
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] text-amber-400 font-bold mb-1 font-cairo">المبلغ المستحق الدفع (الذمة)</span>
-                <span className="text-xl font-black text-amber-500 font-mono" dir="ltr">
-                  {remainingCostForSelection} <span className="text-sm">{selectedInvoice.currency || 'USD'}</span>
-                </span>
-              </div>
-
+            <div className="p-5 space-y-4 flex-1 overflow-y-auto max-h-[70vh] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
               {/* 1. Payment Type Selection */}
               <div>
                 <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2 font-cairo text-right">نوع طريقة الدفع</label>
@@ -1843,6 +1918,13 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       if (cashFunds.length > 0) {
                         setModalSelectedFundId(cashFunds[0].id);
                       }
+                      // Clear and reset values to prevent incorrect data transfer
+                      setModalAmount(0);
+                      setModalNotes('');
+                      setModalDepositorName('');
+                      setModalReferenceNumber('');
+                      setModalInvoiceRate('1');
+                      setModalPaymentRate('1');
                     }}
                     className={`py-2 px-4 rounded-xl border text-xs font-bold font-cairo transition-all cursor-pointer ${
                       modalPaymentType === 'cash'
@@ -1861,6 +1943,13 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                       if (bankFunds.length > 0) {
                         setModalSelectedFundId(bankFunds[0].id);
                       }
+                      // Clear and reset values to prevent incorrect data transfer
+                      setModalAmount(0);
+                      setModalNotes('');
+                      setModalDepositorName('');
+                      setModalReferenceNumber('');
+                      setModalInvoiceRate('1');
+                      setModalPaymentRate('1');
                     }}
                     className={`py-2 px-4 rounded-xl border text-xs font-bold font-cairo transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                       modalPaymentType === 'bank'
@@ -1878,14 +1967,23 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                 <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1.5 font-cairo text-right">الصندوق / الحساب المستهدف</label>
                 <select
                   value={modalSelectedFundId}
-                  onChange={(e) => setModalSelectedFundId(e.target.value)}
+                  onChange={(e) => {
+                    setModalSelectedFundId(e.target.value);
+                    // Clear and reset values to prevent incorrect data transfer
+                    setModalAmount(0);
+                    setModalNotes('');
+                    setModalDepositorName('');
+                    setModalReferenceNumber('');
+                    setModalInvoiceRate('1');
+                    setModalPaymentRate('1');
+                  }}
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-gray-200 focus:outline-none focus:border-purple-500 font-mono"
                 >
                   {funds
                     .filter(f => f.type === modalPaymentType)
                     .map(f => (
                       <option key={f.id} value={f.id} className="bg-[#1c1c1c] font-bold text-right">
-                        {f.name} ({f.currency}) - الرصيد: {f.balance?.toLocaleString()}
+                        {f.name} ({f.currency})
                       </option>
                     ))}
                 </select>
@@ -1900,7 +1998,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                     inputMode="decimal"
                     dir="ltr"
                     lang="en"
-                    value={modalAmount}
+                    value={modalAmount || ''}
                     onFocus={e => e.target.select()}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9.]/g, '');
@@ -1916,6 +2014,62 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500 font-mono">
                     {funds.find(f => f.id === modalSelectedFundId)?.currency || 'USD'}
                   </span>
+                </div>
+              </div>
+
+              {/* Exchange Rate and Conversion */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[9px] text-gray-400 font-bold mb-1 font-cairo text-center">
+                    صرف الفاتورة ({invoiceCurrency})
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    dir="ltr"
+                    lang="en"
+                    value={modalInvoiceRate}
+                    disabled={isSameCurrency}
+                    onFocus={e => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      const parts = val.split('.');
+                      if (parts.length > 2) return;
+                      setModalInvoiceRate(val);
+                    }}
+                    className="w-full h-9 bg-black/40 border border-white/10 rounded-xl px-2 py-1 text-xs font-bold font-mono focus:outline-none focus:border-purple-500 text-center text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder="1.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] text-gray-400 font-bold mb-1 font-cairo text-center">
+                    صرف الدفع ({paymentCurrency})
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    dir="ltr"
+                    lang="en"
+                    value={modalPaymentRate}
+                    disabled={isSameCurrency}
+                    onFocus={e => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      const parts = val.split('.');
+                      if (parts.length > 2) return;
+                      setModalPaymentRate(val);
+                    }}
+                    className="w-full h-9 bg-black/40 border border-white/10 rounded-xl px-2 py-1 text-xs font-bold font-mono focus:outline-none focus:border-purple-500 text-center text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder="1.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] text-purple-400 font-bold mb-1 font-cairo text-center">
+                    المعادل بالفاتورة
+                  </label>
+                  <div className="w-full h-9 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center text-center font-mono text-xs font-black text-purple-300" dir="ltr">
+                    {convertedAmount.toFixed(2)}
+                  </div>
                 </div>
               </div>
 
@@ -1982,12 +2136,16 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
                         depositorName: modalDepositorName.trim(),
                         referenceNumber: modalReferenceNumber.trim()
                       } : undefined,
-                      isActive: true
+                      isActive: true,
+                      invoiceRate: modalInvoiceRate,
+                      paymentRate: modalPaymentRate
                     });
+                    setExitPaidAmount(convertedAmount);
                     setShowOtherPaymentModal(false);
                   }
                 }}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs font-cairo transition-all shadow-lg shadow-purple-600/25 cursor-pointer"
+                disabled={Number(modalAmount) === 0 || !modalSelectedFundId}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs font-cairo transition-all shadow-lg shadow-purple-600/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 تأكيد الدفع الخاص
               </button>

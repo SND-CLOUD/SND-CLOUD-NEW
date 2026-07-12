@@ -367,6 +367,20 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
            inv.invoiceNumber.includes(search);
   }).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
 
+  useEffect(() => {
+    setDecisions(prev => {
+      let changed = false;
+      const next = { ...prev };
+      pendingInvoices.forEach(inv => {
+        if (inv.id && next[inv.id] === undefined) {
+          next[inv.id] = 'approved';
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [pendingInvoices]);
+
   const totalPages = Math.max(1, Math.ceil(pendingInvoices.length / itemsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const currentInvoices = pendingInvoices.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
@@ -2095,14 +2109,14 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
 
                     {/* Action button */}
                     <td className="px-1 py-3 text-center">
-                      <div className="flex items-center justify-center gap-0.5 sm:gap-2">
+                      <div className="flex items-center justify-center gap-2 sm:gap-4">
                         <button 
                           type="button"
                           onClick={() => setActivePrintReportInvoice(invoice)}
                           title="عرض وطباعة تقرير الفحص الفني وعرض الأسعار"
-                          className="p-1 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white transition-all cursor-pointer border border-purple-500/20"
+                          className="p-1.5 rounded-lg bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white transition-all cursor-pointer border border-purple-500/20"
                         >
-                          <Printer size={10} />
+                          <Printer size={14} />
                         </button>
                         <button 
                           onClick={() => subTab === 'approval' ? handleProcessActionBtn(invoice) : handleProcessPartsAction(invoice)}

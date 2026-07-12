@@ -391,7 +391,11 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     setSelectedInvoice(invoice);
     const targetStatus = invoice.status === '21' ? '21' : invoice.status === '22' ? '22' : '20';
     const avItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && i.status === targetStatus);
+    
     setInvoiceItems(avItems);
+    const existingTech = avItems.find(i => i.technician)?.technician || "";
+    setEngineerName(existingTech || user?.name || "");
+    
     
     setActionItems([]);
     setEditingActionIndex(null);

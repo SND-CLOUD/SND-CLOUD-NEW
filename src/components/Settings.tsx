@@ -676,9 +676,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       try {
         const collectionsToClear = [
           'invoices', 'invoice_items', 'customers', 'maintenance_actions', 
-          'approval_actions', 'engineers', 'vault_transactions', 
-          'inventory_items', 'device_categories', 'device_models',
-          'document_outputs'
+          'approval_actions', 'vault_transactions', 
+          'inventory_items', 'document_outputs'
         ];
         
         let colIdx = 0;
@@ -711,11 +710,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       setProgress({ active: true, value: 50, label: 'جاري تنظيف قاعدة البيانات المحلية...' });
       const tablesToClear = [
         'invoices', 'invoice_items', 'customers', 'maintenance_actions', 
-        'approval_actions', 'engineers', 'vault_transactions', 
-        'inventory_items', 'device_categories', 'device_models',
-        'company_details', 'settings', 'document_outputs',
-        'fin_transaction_types', 'fin_funds', 'fin_currencies',
-        'fin_payment_methods'
+        'approval_actions', 'vault_transactions', 
+        'inventory_items', 'document_outputs'
       ];
       
       let tableIdx = 0;
@@ -742,6 +738,13 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       } catch (e) {
         console.error(`Error resetting users in SQLite`, e);
       }
+
+      // Reset funds balances
+      try {
+        await localDb.run(`UPDATE fin_funds SET balance = 0`);
+      } catch (e) {
+        console.error('Error resetting funds balances', e);
+      }
       
       // 3. Reset Counter settings in Firestore (with safety wrap)
       try {
@@ -754,8 +757,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       }
 
       // 4. Clear LocalStorage settings
-      localStorage.removeItem('snd_settings');
-      localStorage.removeItem('snd_country_code');
+      // localStorage.removeItem('snd_settings'); // Keep shop details and settings intact
+      // localStorage.removeItem('snd_country_code'); // Keep country code intact
       localStorage.removeItem('snd_has_bio_credentials');
       localStorage.removeItem('snd_bio_credentials');
       localStorage.setItem('snd_db_seeded', 'true');

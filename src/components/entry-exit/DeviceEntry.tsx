@@ -79,7 +79,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
   const [currency, setCurrency] = useState<'USD' | 'SAR' | 'YER'>('USD');
   const [items, setItems] = useState<(Partial<InvoiceItem> & { unitCost?: number | '' })[]>([]);
   
-  const initialDeviceState = { deviceType: '', deviceName: '', quantity: 1, faultType: 'يحتاج صيانة', deviceNotes: 'لا يوجد', technicalNotes: '', status: '10', cost: 0, technician: '' };
+  const initialDeviceState = { deviceType: '', deviceName: '', quantity: 1, faultType: 'صيانة', deviceNotes: 'بدون ملحقات', technicalNotes: '', status: '10', cost: 0, technician: '' };
   const [currentDevice, setCurrentDevice] = useState<Partial<InvoiceItem> & { unitCost?: number | '' }>(initialDeviceState);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showColumnSettings, setShowColumnSettings] = useState(false);
@@ -307,8 +307,8 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
           deviceType: item.deviceType || 'مجهول',
           deviceName: item.deviceName || '',
           quantity: Number(item.quantity) || 1,
-          customerProblem: item.faultType || 'يحتاج صيانة',
-          deviceNotes: item.deviceNotes || 'لا يوجد',
+          customerProblem: item.faultType || 'صيانة',
+          deviceNotes: item.deviceNotes || 'بدون ملحقات',
           cost: 0,
           status: '10',
           technician: '',
@@ -958,7 +958,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
                             e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                          }}
                          className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 focus:border-orange-500 outline-none text-sm text-white text-right flex-1"
-                         placeholder="يحتاج صيانة..."
+                         placeholder="صيانة..."
                        />
                     </div>
 

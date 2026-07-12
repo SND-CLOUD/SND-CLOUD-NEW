@@ -61,7 +61,7 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
     if (initialInvoice && items.length > 0 && !selectedInvoice) {
       const MAINTENANCE_ELIGIBLE_STATUSES = ['40', 'repairing'];
       const avItems = items.filter(i => i.invoiceNumber === initialInvoice.invoiceNumber && MAINTENANCE_ELIGIBLE_STATUSES.includes(i.status));
-      setInvoiceItems(avItems);
+      
       if (avItems.length > 0) {
         setActionItems([{ id: avItems[0].id!, count: 1, outcome: 'repaired', reason: 'جاهز' }]);
       }
@@ -147,7 +147,11 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
   const openInvoice = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     const avItems = items.filter(i => i.invoiceNumber === invoice.invoiceNumber && MAINTENANCE_ELIGIBLE_STATUSES.includes(i.status));
+    
     setInvoiceItems(avItems);
+    const existingTech = avItems.find(i => i.technician)?.technician || "";
+    setEngineerName(existingTech || user?.name || "");
+    
     if (avItems.length > 0) {
       const firstId = avItems[0].id!;
       const availCount = avItems[0].quantity || 1;

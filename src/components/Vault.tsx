@@ -433,6 +433,16 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     return true;
   };
 
+  // Handle smooth scroll on focus for mobile devices
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const target = e.target;
+    setTimeout(() => {
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+  };
+
   // Handle saving and exporting voucher
   const handleSaveFinalVoucher = async (e: React.FormEvent, action: 'commit' | 'print' | 'whatsapp') => {
     e.preventDefault();
@@ -1831,7 +1841,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
 
           {/* 1. RECEIPT OR PAYMENT VOUCHERS SUBMIT SEGMENTS (Now as a modal or dedicated state) */}
           {(activeSegment === 'receipt' || activeSegment === 'payment') && showAddModal && (
-            <div className="space-y-6 animate-fade-in">
+            <div className="space-y-6 animate-fade-in pb-48">
               
               {/* Show PRINT PREVIEW if true */}
               {showPrintPreview ? (
@@ -2151,7 +2161,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                         </label>
                         <select 
                           value={selectedFundId}
-                          onChange={(e) => setSelectedFundId(e.target.value)}
+                          onFocus={handleInputFocus} onChange={(e) => setSelectedFundId(e.target.value)}
                           className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 text-right appearance-none font-semibold"
                           required
                         >
@@ -2178,7 +2188,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                            </label>
                            <select 
                              value={liabilityCurrency}
-                             onChange={(e) => setLiabilityCurrency(e.target.value)}
+                             onFocus={handleInputFocus} onChange={(e) => setLiabilityCurrency(e.target.value)}
                              className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-blue-500/50 text-right appearance-none font-semibold"
                              required
                            >
@@ -2199,7 +2209,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                 inputMode="decimal"
                                 dir="ltr"
                                 lang="en"
-                                onFocus={e => e.target.select()}
+                                onFocus={e => { e.target.select(); handleInputFocus(e); }}
                                 placeholder="0.00"
                                 value={liabilityAmount}
                                 onChange={(e) => {
@@ -2237,7 +2247,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                       inputMode="decimal"
                                       dir="ltr"
                                       lang="en"
-                                      onFocus={e => e.target.select()}
+                                      onFocus={e => { e.target.select(); handleInputFocus(e); }}
                                       placeholder="0.00"
                                       value={voucherAmount}
                                       onChange={(e) => {
@@ -2271,7 +2281,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                            setSelectedCustomerId('');
                                            setShowCustomerDropdown(true);
                                         }}
-                                        onFocus={() => setShowCustomerDropdown(true)}
+                                        onFocus={(e) => { setShowCustomerDropdown(true); handleInputFocus(e); }}
                                         className="flex-1 bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50"
                                       />
                                       <button 
@@ -2321,7 +2331,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                  </label>
                                  <select 
                                    value={selectedCategory}
-                                   onChange={(e) => setSelectedCategory(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setSelectedCategory(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 appearance-none text-right font-semibold"
                                    required
                                  >
@@ -2343,7 +2353,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                    type="text"
                                    placeholder="أدخل ملاحظات السند..."
                                    value={voucherNotes}
-                                   onChange={(e) => setVoucherNotes(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setVoucherNotes(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50"
                                    required
                                  />
@@ -2365,7 +2375,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                    type="text"
                                    placeholder="أدخل رقم المرجع أو الشيك..."
                                    value={referenceNumber}
-                                   onChange={(e) => setReferenceNumber(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setReferenceNumber(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 font-mono text-left"
                                    required
                                  />
@@ -2382,7 +2392,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                       inputMode="decimal"
                                       dir="ltr"
                                       lang="en"
-                                      onFocus={e => e.target.select()}
+                                      onFocus={e => { e.target.select(); handleInputFocus(e); }}
                                       placeholder="0.00"
                                       value={voucherAmount}
                                       onChange={(e) => {
@@ -2409,7 +2419,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                    type="text"
                                    placeholder="أدخل اسم مودع المبلغ بالكامل..."
                                    value={depositorName}
-                                   onChange={(e) => setDepositorName(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setDepositorName(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50"
                                    required
                                  />
@@ -2431,7 +2441,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                            setSelectedCustomerId('');
                                            setShowCustomerDropdown(true);
                                         }}
-                                        onFocus={() => setShowCustomerDropdown(true)}
+                                        onFocus={(e) => { setShowCustomerDropdown(true); handleInputFocus(e); }}
                                         className="flex-1 bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50"
                                       />
                                       <button 
@@ -2481,7 +2491,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                  </label>
                                  <select 
                                    value={selectedCategory}
-                                   onChange={(e) => setSelectedCategory(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setSelectedCategory(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50 appearance-none text-right font-semibold"
                                    required
                                  >
@@ -2503,7 +2513,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                                    type="text"
                                    placeholder="أدخل ملاحظات السند..."
                                    value={voucherNotes}
-                                   onChange={(e) => setVoucherNotes(e.target.value)}
+                                   onFocus={handleInputFocus} onChange={(e) => setVoucherNotes(e.target.value)}
                                    className="flex-1 max-w-xs bg-black/40 border border-white/5 rounded-xl px-3 py-1 text-xs text-white outline-none focus:border-amber-500/50"
                                    required
                                  />
@@ -2606,7 +2616,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
                         step="0.01"
                         dir="ltr"
                         lang="en"
-                        onFocus={e => e.target.select()}
+                        onFocus={e => { e.target.select(); handleInputFocus(e); }}
                         value={transferAmount}
                         onChange={(e) => setTransferAmount(e.target.value)}
                         placeholder="0.00"

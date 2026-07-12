@@ -75,14 +75,6 @@ export default function App() {
   const [invoicesList, setInvoicesList] = useState<any[]>([]);
   const [itemsList, setItemsList] = useState<any[]>([]);
   const [activeAlerts, setActiveAlerts] = useState<any[]>([]);
-  const [showSectionAlerts, setShowSectionAlerts] = useState(() => {
-    return sessionStorage.getItem('alertsClosed') !== 'true';
-  });
-
-  const handleCloseAlerts = () => {
-    setShowSectionAlerts(false);
-    sessionStorage.setItem('alertsClosed', 'true');
-  };
   const [showAllAlertsModal, setShowAllAlertsModal] = useState(false);
   const [alertsTab, setAlertsTab] = useState<'outstanding' | 'warranty'>('outstanding');
   
@@ -427,7 +419,6 @@ export default function App() {
     setUser(null);
     sessionStorage.removeItem('snd_user');
     sessionStorage.removeItem('alertsClosed');
-    setShowSectionAlerts(true);
     setShowSignOutModal(false);
   };
 
@@ -672,50 +663,7 @@ export default function App() {
             </div>
           </header>
 
-          {/* Active Alerts Banner Area */}
-          <AnimatePresence>
-            {showSectionAlerts && activeAlerts.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-amber-500/10 border-b border-amber-500/20 font-cairo text-right shrink-0"
-                dir="rtl"
-              >
-                <div className="max-w-7xl mx-auto px-4 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-3">
-                    <div className="p-1.5 bg-amber-500/20 text-amber-500 rounded-lg animate-pulse shrink-0">
-                      <Bell size={16} />
-                    </div>
-                    <div>
-                      <span className="text-xs font-black text-white">إشعارات التنبيه المستحقة والضمان ({activeAlerts.length}):</span>
-                      <span className="text-[11px] text-gray-300 mr-2 block sm:inline">
-                        يوجد لديك {activeAlerts.filter(a => a.type === 'outstanding').length} فواتير معلقة الدفع و {activeAlerts.filter(a => a.type.startsWith('warranty')).length} تنبيهات ضمان نشطة.
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 self-end sm:self-auto">
-                    <button
-                      onClick={() => {
-                        setShowAllAlertsModal(true);
-                        setAlertsTab(activeAlerts.some(a => a.type === 'outstanding') ? 'outstanding' : 'warranty');
-                      }}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black text-[11px] font-black rounded-xl transition-all cursor-pointer shadow-md shadow-amber-500/10"
-                    >
-                      عرض التفاصيل والتسوية
-                    </button>
-                    <button
-                      onClick={handleCloseAlerts}
-                      className="p-1 hover:bg-white/5 text-gray-400 hover:text-white rounded-lg transition-all cursor-pointer"
-                      title="إخفاء التنبيه"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Active Alerts Banner Area Removed */}
 
           {/* Tab Content */}
           <div className={`flex-1 ${activeTab === 'dashboard' ? 'overflow-hidden' : 'overflow-y-auto'} ${['search', 'customers', 'inspection', 'maintenance', 'inventory', 'vault', 'device-movement', 'approval', 'entry-exit'].includes(activeTab) ? 'p-0 pb-28 md:pb-8' : 'p-4 md:p-8 pb-28 md:pb-8'}`}>
