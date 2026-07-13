@@ -14,20 +14,23 @@ import * as htmlToImage from 'html-to-image';
 import { sanitizeDocumentStyles, sanitizeElementInlineStyles, cleanOklchInStyleText, applyPrintStylesAndGetRestoreFn } from '../../lib/html2canvasHelper';
 import BankAccountsFooter from '../BankAccountsFooter';
 
+function isNoPartsText(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    t.includes('عدم توفر') ||
+    t.includes('غير متوفر') ||
+    t.includes('لا تتوفر') ||
+    t.includes('لا توجد قطع') ||
+    t.includes('قطع غير متوفرة') ||
+    t.includes('no parts') ||
+    t.includes('parts not available') ||
+    t.includes('parts unavailable') ||
+    t.includes('unavailability of parts')
+  );
+}
+
 function getItemSubStatus(item: InvoiceItem): string {
   if (item.subStatus) {
-    if (item.subStatus === 'refused') {
-      const reason = (item.failureReason || '').toLowerCase();
-      const report = (item.engineerReport || '').toLowerCase();
-      if (
-        reason.includes('قطع') || report.includes('قطع') ||
-        reason.includes('parts') || report.includes('parts') ||
-        reason.includes('تتوفر') || report.includes('تتوفر') ||
-        reason.includes('توفر') || report.includes('توفر')
-      ) {
-        return 'no_parts';
-      }
-    }
     return item.subStatus;
   }
   
@@ -39,12 +42,7 @@ function getItemSubStatus(item: InvoiceItem): string {
   if (item.status === 'refused') {
     const reason = (item.failureReason || '').toLowerCase();
     const report = (item.engineerReport || '').toLowerCase();
-    if (
-      reason.includes('قطع') || report.includes('قطع') ||
-      reason.includes('parts') || report.includes('parts') ||
-      reason.includes('تتوفر') || report.includes('تتوفر') ||
-      reason.includes('توفر') || report.includes('توفر')
-    ) {
+    if (isNoPartsText(reason) || isNoPartsText(report)) {
       return 'no_parts';
     }
     return 'refused';
@@ -56,12 +54,7 @@ function getItemSubStatus(item: InvoiceItem): string {
     const report = (item.engineerReport || '').toLowerCase();
     const reason = (item.failureReason || '').toLowerCase();
     
-    if (
-      reason.includes('قطع') || report.includes('قطع') ||
-      reason.includes('parts') || report.includes('parts') ||
-      reason.includes('تتوفر') || report.includes('تتوفر') ||
-      reason.includes('توفر') || report.includes('توفر')
-    ) {
+    if (isNoPartsText(reason) || isNoPartsText(report)) {
       return 'no_parts';
     }
     if (reason.includes('لم يوافق') || report.includes('لم يوافق')) return 'refused';

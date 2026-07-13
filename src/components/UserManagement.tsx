@@ -96,6 +96,60 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     }
   };
 
+  const toggleAllPermissions = (isEditing: boolean = false) => {
+    const currentPerms = isEditing ? (editingUser?.permissions || DEFAULT_PERMISSIONS) : (formData.permissions || DEFAULT_PERMISSIONS);
+    const sections: (keyof AppPermissions)[] = [
+      'inventory', 
+      'vault', 
+      'customers', 
+      'invoices', 
+      'reports', 
+      'settings_main_data',
+      'settings_devices_engineers',
+      'settings_device_management',
+      'settings_users'
+    ];
+    
+    let allSelected = true;
+    for (const section of sections) {
+      const defaultSection = DEFAULT_PERMISSIONS[section] as any;
+      const currentSection = (currentPerms[section] || {}) as any;
+      for (const action of PERMISSIONS_ORDER) {
+        if (defaultSection[action] !== undefined) {
+          if (!currentSection[action]) {
+            allSelected = false;
+            break;
+          }
+        }
+      }
+      if (!allSelected) break;
+    }
+
+    const newPerms = { ...currentPerms };
+    for (const section of sections) {
+      const defaultSection = DEFAULT_PERMISSIONS[section] as any;
+      const currentSection = { ...(currentPerms[section] || {}) } as any;
+      for (const action of PERMISSIONS_ORDER) {
+        if (defaultSection[action] !== undefined) {
+          currentSection[action] = !allSelected;
+        }
+      }
+      newPerms[section] = currentSection;
+    }
+
+    if (isEditing && editingUser) {
+      setEditingUser({
+        ...editingUser,
+        permissions: newPerms
+      });
+    } else {
+      setFormData({
+        ...formData,
+        permissions: newPerms
+      });
+    }
+  };
+
   const SECTION_MAP: Record<string, { label: string; icon: any }> = {
     inventory: { label: 'المخزون', icon: Package },
     vault: { label: 'الخزينة', icon: Wallet },
@@ -134,10 +188,47 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     
     return (
       <div className="space-y-4 border-t border-white/5 pt-6 mt-6">
-        <h4 className="text-sm font-black text-white flex items-center gap-2 mb-4 font-cairo">
-          <ShieldCheck size={18} className="text-orange-500" />
-          جدول صلاحيات المستخدم المخصصة
-        </h4>
+        <div className="flex items-center justify-between gap-2 mb-4 flex-wrap" dir="rtl">
+          <h4 className="text-sm font-black text-white flex items-center gap-2 font-cairo m-0">
+            <ShieldCheck size={18} className="text-orange-500" />
+            جدول صلاحيات المستخدم المخصصة
+          </h4>
+          
+          {canManageUsers && (
+            <button
+              type="button"
+              onClick={() => toggleAllPermissions(isEditing)}
+              className="flex items-center gap-2 px-3.5 py-1.5 bg-[#242424] hover:bg-[#2c2c2c] border border-white/10 rounded-xl text-xs font-bold text-orange-400 hover:text-white font-cairo transition-all cursor-pointer shadow-sm shrink-0"
+            >
+              {(() => {
+                let allSelected = true;
+                for (const section of sections) {
+                  const defaultSection = DEFAULT_PERMISSIONS[section] as any;
+                  const currentSection = (currentPerms[section] || {}) as any;
+                  for (const action of PERMISSIONS_ORDER) {
+                    if (defaultSection[action] !== undefined) {
+                      if (!currentSection[action]) {
+                        allSelected = false;
+                        break;
+                      }
+                    }
+                  }
+                  if (!allSelected) break;
+                }
+                return (
+                  <>
+                    <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      allSelected ? 'bg-orange-500 border-orange-500 text-white shadow-[0_0_8px_rgba(249,115,22,0.3)]' : 'bg-[#181818] border-white/20 text-transparent'
+                    }`}>
+                      <Check size={10} strokeWidth={4} />
+                    </div>
+                    <span>{allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل (Select All)'}</span>
+                  </>
+                );
+              })()}
+            </button>
+          )}
+        </div>
         
         <div className="overflow-x-auto bg-[#181818] rounded-2xl border border-white/5 shadow-xl">
           <table className="w-full text-xs sm:text-sm text-center" dir="rtl">

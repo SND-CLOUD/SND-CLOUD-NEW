@@ -1251,23 +1251,46 @@ export default function PrintPreviewOverlay({
                 const notes = String(it.technicalNotes || '').toLowerCase();
                 const reason = String(it.failureReason || '').toLowerCase();
 
+                const isNoPartsText = (text: string) => {
+                  const t = text.toLowerCase();
+                  return (
+                    t.includes('عدم توفر') ||
+                    t.includes('غير متوفر') ||
+                    t.includes('لا تتوفر') ||
+                    t.includes('لا توجد قطع') ||
+                    t.includes('قطع غير متوفرة') ||
+                    t.includes('no parts') ||
+                    t.includes('parts not available') ||
+                    t.includes('parts unavailable') ||
+                    t.includes('unavailability of parts')
+                  );
+                };
+
+                // 1. Direct subStatus check
+                if (subStatus === 'ready') return 'جاهز';
+                if (subStatus === 'intact') return 'سليم';
+                if (subStatus === 'unrepairable') return 'لا يصلح';
+                if (subStatus === 'refused') return 'لم يوافق';
+                if (subStatus === 'no_parts') return 'عدم توفر قطع الغيار';
+
+                // 2. Direct status check
+                if (statusVal === 'ready' || statusVal === '60') return 'جاهز';
+                if (statusVal === 'intact') return 'سليم';
+                if (statusVal === 'unrepairable' || statusVal === '55' || statusVal === '45') return 'لا يصلح';
+                if (statusVal === 'refused' || statusVal === '70' || statusVal === 'cancelled') return 'لم يوافق';
+                if (statusVal === 'no_parts') return 'عدم توفر قطع الغيار';
+
+                // 3. Keyword fallbacks for other cases/legacy/unified '50'
                 if (
-                  subStatus === 'no_parts' || 
-                  statusVal === 'no_parts' ||
-                  reason.includes('قطع') || report.includes('قطع') || notes.includes('قطع') ||
-                  reason.includes('parts') || report.includes('parts') || notes.includes('parts') ||
-                  reason.includes('تتوفر') || report.includes('تتوفر') || notes.includes('تتوفر') ||
-                  reason.includes('توفر') || report.includes('توفر') || notes.includes('توفر')
+                  isNoPartsText(reason) || 
+                  isNoPartsText(report) || 
+                  isNoPartsText(notes)
                 ) {
                   return 'عدم توفر قطع الغيار';
                 }
 
-                if (subStatus === 'ready' || statusVal === 'ready') return 'جاهز';
-                if (subStatus === 'intact' || statusVal === 'intact' || report.includes('سليم') || notes.includes('سليم')) return 'سليم';
+                if (report.includes('سليم') || notes.includes('سليم')) return 'سليم';
                 if (
-                  subStatus === 'unrepairable' || 
-                  statusVal === 'unrepairable' || 
-                  ['55', '45'].includes(statusVal) || 
                   report.includes('لا يصلح') || 
                   report.includes('لايصلح') ||
                   notes.includes('لا يصلح') ||
@@ -1275,26 +1298,12 @@ export default function PrintPreviewOverlay({
                 ) {
                   return 'لا يصلح';
                 }
-                if (
-                  subStatus === 'refused' || 
-                  statusVal === 'refused' || 
-                  statusVal === '70' || 
-                  statusVal === 'cancelled' || 
-                  reason.includes('لم يوافق') || 
-                  report.includes('لم يوافق')
-                ) {
-                  return 'لم يوافق';
-                }
+                if (reason.includes('لم يوافق') || report.includes('لم يوافق')) return 'لم يوافق';
 
-                // Fallback map:
                 if (statusVal === '50') {
                   if (reason.includes('لم يوافق') || report.includes('لم يوافق')) return 'لم يوافق';
                   if (reason.includes('لا يصلح') || report.includes('لا يصلح') || report.includes('unrepairable')) return 'لا يصلح';
                   if (report.includes('سليم') || report.includes('intact')) return 'سليم';
-                  return 'جاهز';
-                }
-
-                if (statusVal === '60') {
                   return 'جاهز';
                 }
 
