@@ -257,7 +257,14 @@ export default function PrintPreviewOverlay({
             <div className="w-10 h-10 border border-dashed border-gray-300 rounded-xl mb-1 flex items-center justify-center text-gray-400 text-[10px] font-bold">شعار المحل</div>
           )}
           <h1 className="text-xs md:text-sm font-black text-gray-900 border-2 border-gray-900 px-5 h-7.5 inline-flex items-center justify-center rounded-lg bg-gray-50/50 leading-none whitespace-nowrap">
-            {type === 'invoice' ? getTemplateName(templateType) : (type === 'statement' ? 'كشف حساب مالي موحد' : (type === 'table' ? (customTitle || tableData?.title) : (voucher?.type === 'receipt' ? 'سند قبض مالي' : 'سند صرف مالي')))}
+            {type === 'invoice' ? getTemplateName(templateType) : (type === 'statement' ? `كشف حساب مالي - ${(() => {
+              const curr = statement?.liabilityCurrency || 'USD';
+              if (curr === 'USD') return 'دولار';
+              if (curr === 'SAR') return 'ريال سعودي';
+              if (curr === 'YER') return 'ريال يمني';
+              if (curr === 'EUR') return 'يورو';
+              return curr;
+            })()}` : (type === 'table' ? (customTitle || tableData?.title) : (voucher?.type === 'receipt' ? 'سند قبض مالي' : 'سند صرف مالي')))}
           </h1>
         </div>
 

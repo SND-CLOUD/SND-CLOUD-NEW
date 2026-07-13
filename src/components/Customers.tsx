@@ -77,6 +77,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
   const [editEmail, setEditEmail] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [editHasWhatsapp, setEditHasWhatsapp] = useState(true);
+  const [editLiabilityCurrency, setEditLiabilityCurrency] = useState('USD');
   const [isSavingInProcess, setIsSavingInProcess] = useState(false);
 
   const nextCustomerNumber = Math.max(0, ...customers.map(c => Number(c.customerNumber) || 0)) + 1;
@@ -137,6 +138,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     setEditEmail(customer.email || '');
     setEditNotes(customer.notes || '');
     setEditHasWhatsapp(customer.hasWhatsapp !== undefined ? customer.hasWhatsapp : true);
+      setEditLiabilityCurrency(customer.liabilityCurrency || 'USD');
   };
 
   const handleUpdateCustomer = async () => {
@@ -297,7 +299,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
         
         let docType = 'سند قبض';
         let statement = tx.transactionCategory || 'دفعه تحت الحساب';
-        let details = tx.notes || '';
+        let details = tx.statementNote || tx.notes || '';
         let refStr = String(tx.voucherNumber || tx.id?.substring(0, 5)).replace(/#/g, '');
 
         if (isLinkedToInvoice) {
@@ -510,8 +512,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
 
   // Sorting/Filter controls
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
-  const [filterType, setFilterType] = useState<'alpha' | 'date' | 'debt'>('alpha');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [filterType, setFilterType] = useState<'alpha' | 'date' | 'debt' | 'devices' | 'currency' | 'code'>('code');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Pagination controls
   const [currentPage, setCurrentPage] = useState(1);
@@ -538,6 +540,20 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
         const debtA = getCustomerOutstandingAmount(a.id!);
         const debtB = getCustomerOutstandingAmount(b.id!);
         return sortDir === 'asc' ? debtA - debtB : debtB - debtA;
+      } else if (filterType === 'devices') {
+        const devA = getCustomerRemainingDevices(a.id!);
+        const devB = getCustomerRemainingDevices(b.id!);
+        return sortDir === 'asc' ? devA - devB : devB - devA;
+      } else if (filterType === 'currency') {
+        const currA = a.liabilityCurrency || 'USD';
+        const currB = b.liabilityCurrency || 'USD';
+        return sortDir === 'asc' 
+          ? currA.localeCompare(currB, 'ar') 
+          : currB.localeCompare(currA, 'ar');
+      } else if (filterType === 'code') {
+        const numA = Number(a.customerNumber) || 0;
+        const numB = Number(b.customerNumber) || 0;
+        return sortDir === 'asc' ? numA - numB : numB - numA;
       }
       return 0;
     });
@@ -545,10 +561,29 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
     return list;
   };
 
-  const setFilterAndSort = (type: 'alpha' | 'date' | 'debt', dir: 'asc' | 'desc') => {
+  const setFilterAndSort = (type: 'alpha' | 'date' | 'debt' | 'devices' | 'currency' | 'code', dir: 'asc' | 'desc') => {
     setFilterType(type);
     setSortDir(dir);
     setShowFilterDropdown(false);
+  };
+
+  const handleHeaderClick = (type: 'alpha' | 'date' | 'debt' | 'devices' | 'currency' | 'code') => {
+    if (filterType === type) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setFilterType(type);
+      if (type === 'date' || type === 'code' || type === 'debt' || type === 'devices') {
+        setSortDir('desc');
+      } else {
+        setSortDir('asc');
+      }
+    }
+    setCurrentPage(1);
+  };
+
+  const renderSortArrow = (type: 'alpha' | 'date' | 'debt' | 'devices' | 'currency' | 'code') => {
+    if (filterType !== type) return null;
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
   };
 
   const getStatusStyle = (status: string) => {
@@ -753,6 +788,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                         balance: diff,
                         balanceStatus: balanceStatus,
                         currency: arCurrency,
+                        liabilityCurrency: selectedCustomer.liabilityCurrency || 'USD',
                         entries: formattedEntries
                       }
                     }
@@ -1113,6 +1149,7 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                           balance: diff,
                           balanceStatus: balanceStatus,
                           currency: arCurrency,
+                          liabilityCurrency: selectedCustomer.liabilityCurrency || 'USD',
                           entries: formattedEntries
                         }
                       }
@@ -1285,18 +1322,31 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
           <table className="w-full text-right border-collapse table-fixed select-none">
             <thead>
               <tr className="bg-white/5 border-b border-white/10 text-gray-400 text-[9px] sm:text-[10px]">
-                <th className="px-1 py-1.5 font-bold text-center w-10 sm:w-16">الكود</th>
-                <th className="px-1 py-1.5 font-bold w-1/4">اسم العميل</th>
+                <th onClick={() => handleHeaderClick('code')} className="px-1 py-1.5 font-bold text-center w-10 sm:w-16 cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  الكود{renderSortArrow('code')}
+                </th>
+                <th onClick={() => handleHeaderClick('alpha')} className="px-1 py-1.5 font-bold w-1/4 cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  اسم العميل{renderSortArrow('alpha')}
+                </th>
                 <th className="px-1 py-1.5 font-bold">رقم الجوال</th>
-                <th className="px-1 py-1.5 font-bold text-center w-12 sm:w-16 whitespace-nowrap">أجهزة</th>
-                <th className="px-1 py-1.5 font-bold text-center w-14 sm:w-16 whitespace-nowrap">المديونية</th>
-                <th className="px-1 py-1.5 font-bold text-center w-14 sm:w-20 whitespace-nowrap">تاريخ التسجيل</th>
+                <th onClick={() => handleHeaderClick('devices')} className="px-1 py-1.5 font-bold text-center w-12 sm:w-16 whitespace-nowrap cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  أجهزة{renderSortArrow('devices')}
+                </th>
+                <th onClick={() => handleHeaderClick('debt')} className="px-1 py-1.5 font-bold text-center w-14 sm:w-16 whitespace-nowrap cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  المديونية{renderSortArrow('debt')}
+                </th>
+                <th onClick={() => handleHeaderClick('currency')} className="px-1 py-1.5 font-bold text-center w-14 sm:w-18 whitespace-nowrap cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  عملة الحساب{renderSortArrow('currency')}
+                </th>
+                <th onClick={() => handleHeaderClick('date')} className="px-1 py-1.5 font-bold text-center w-14 sm:w-20 whitespace-nowrap cursor-pointer hover:bg-white/10 hover:text-white transition-all select-none">
+                  تاريخ التسجيل{renderSortArrow('date')}
+                </th>
               </tr>
             </thead>
               <tbody className="divide-y divide-white/5 text-slate-300 text-[10px] sm:text-xs">
                 {currentCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-8 text-center text-gray-500 font-bold font-cairo text-xs">
+                    <td colSpan={7} className="px-2 py-8 text-center text-gray-500 font-bold font-cairo text-xs">
                       لا يوجد عملاء مطابقين للبحث حالياً.
                     </td>
                   </tr>
@@ -1341,6 +1391,18 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
                           ) : (
                             <span className="text-slate-600 text-[9px] font-bold">0</span>
                           )}
+                        </td>
+                        <td className="px-1 py-1 text-center whitespace-nowrap text-[9px] sm:text-[10px]">
+                          <span className="inline-block bg-white/5 border border-white/5 text-gray-300 px-1.5 py-0.5 rounded text-[9px] font-black">
+                            {(() => {
+                              const curr = cust.liabilityCurrency || 'USD';
+                              if (curr === 'USD') return 'دولار';
+                              if (curr === 'SAR') return 'ريال سعودي';
+                              if (curr === 'YER') return 'ريال يمني';
+                              if (curr === 'EUR') return 'يورو';
+                              return curr;
+                            })()}
+                          </span>
                         </td>
                         <td className="px-1 py-1 font-mono text-slate-400 text-[9px] sm:text-[10px] text-center whitespace-nowrap">
                           {cust.createdAt

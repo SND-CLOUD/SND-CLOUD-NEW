@@ -35,6 +35,7 @@ export interface Customer {
   notes?: string;
   createdAt: any;
   hasWhatsapp?: boolean;
+  liabilityCurrency?: string;
 }
 
 export interface Invoice {

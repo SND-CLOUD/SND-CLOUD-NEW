@@ -102,6 +102,7 @@ class LocalDatabase {
           facebookUrl TEXT,
           mapUrl TEXT,
           email TEXT,
+          liabilityCurrency TEXT,
           bio TEXT,
           logoUrl TEXT,
           address TEXT,
@@ -123,6 +124,7 @@ class LocalDatabase {
           phone2 TEXT,
           companyName TEXT,
           email TEXT,
+          liabilityCurrency TEXT,
           notes TEXT,
           hasWhatsapp INTEGER,
           createdAt TEXT,
@@ -198,6 +200,7 @@ class LocalDatabase {
           liabilityAmount REAL,
           receiptCurrency TEXT,
           receiptAmount REAL,
+          statementNote TEXT,
           bankDetails TEXT
         );
 
@@ -501,6 +504,13 @@ class LocalDatabase {
         // Column probably already exists, which is fine
       }
 
+      // Attempt to add liabilityCurrency column to existing customers table if needed
+      try {
+        await this.db.run('ALTER TABLE customers ADD COLUMN liabilityCurrency TEXT');
+      } catch (err) {
+        // Column probably already exists, which is fine
+      }
+
       // Attempt to add updatedAt column to existing invoice_items table if needed
       try {
         await this.db.run('ALTER TABLE invoice_items ADD COLUMN updatedAt TEXT');
@@ -629,6 +639,13 @@ class LocalDatabase {
       } catch (err) {
         // Column probably already exists
       }
+
+      try {
+        await this.db.run('ALTER TABLE vault_transactions ADD COLUMN statementNote TEXT');
+      } catch (err) {
+        // console.warn("Column statementNote might already exist", err);
+      }
+
 
       // One-time factory reset requested by user
       if (localStorage.getItem('snd_wipe_v1') !== 'done') {

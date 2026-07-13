@@ -4,6 +4,7 @@ import { X, Users, Check, UserPlus } from 'lucide-react';
 import { doc, getDoc, collection, writeBatch, serverTimestamp, db } from '../firebase';
 import { Customer, User as SystemUser } from '../types';
 import { CustomerAutocomplete } from './CustomerAutocomplete';
+import { localDb } from '../lib/local-db';
 
 interface AddCustomerModalProps {
   isOpen: boolean;
@@ -26,17 +27,42 @@ export default function AddCustomerModal({
 }: AddCustomerModalProps) {
   const [addName, setAddName] = useState(initialName);
   const [addCompanyName, setAddCompanyName] = useState('');
+  const [addLiabilityCurrency, setAddLiabilityCurrency] = useState('USD');
   const [addPhone1, setAddPhone1] = useState(initialPhone);
   const [addPhone2, setAddPhone2] = useState('');
   const [addEmail, setAddEmail] = useState('');
   const [addNotes, setAddNotes] = useState('');
   const [addHasWhatsapp, setAddHasWhatsapp] = useState(true);
   const [isAddingInProcess, setIsAddingInProcess] = useState(false);
+  const [availableCurrencies, setAvailableCurrencies] = useState<{ id: string, name: string }[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       setAddName(initialName);
       setAddPhone1(initialPhone);
+      
+      const fetchCurrencies = async () => {
+        try {
+          const res = await localDb.query("SELECT * FROM fin_currencies WHERE status = 'active' ORDER BY name ASC");
+          if (res.values && res.values.length > 0) {
+            setAvailableCurrencies(res.values as any[]);
+            const hasUSD = res.values.some((c: any) => c.name === 'USD');
+            if (hasUSD) {
+              setAddLiabilityCurrency('USD');
+            } else {
+              setAddLiabilityCurrency(res.values[0].name || 'USD');
+            }
+          } else {
+            setAvailableCurrencies([{ id: 'USD', name: 'USD' }]);
+            setAddLiabilityCurrency('USD');
+          }
+        } catch (err) {
+          console.error("Error loading currencies in modal:", err);
+          setAvailableCurrencies([{ id: 'USD', name: 'USD' }]);
+          setAddLiabilityCurrency('USD');
+        }
+      };
+      fetchCurrencies();
     }
   }, [isOpen, initialName, initialPhone]);
 
@@ -62,6 +88,7 @@ export default function AddCustomerModal({
       const newCustomerData = {
         name: addName.trim(),
         companyName: addCompanyName.trim(),
+          liabilityCurrency: addLiabilityCurrency,
         phone1: addPhone1.trim(),
         phone2: addPhone2.trim(),
         email: addEmail.trim(),
@@ -82,6 +109,7 @@ export default function AddCustomerModal({
       // Reset
       setAddName('');
       setAddCompanyName('');
+      setAddLiabilityCurrency('USD');
       setAddPhone1('');
       setAddPhone2('');
       setAddEmail('');
@@ -147,6 +175,7 @@ export default function AddCustomerModal({
                     setAddNotes(c.notes || '');
                     setAddHasWhatsapp(c.hasWhatsapp !== undefined ? c.hasWhatsapp : true);
                     setAddCompanyName(c.companyName || '');
+                    setAddLiabilityCurrency(c.liabilityCurrency || 'USD');
                   }}
                   onInputChange={(val) => setAddName(val)}
                   label="اسم العميل * (إلزامي):"
@@ -209,6 +238,24 @@ export default function AddCustomerModal({
                   onChange={(e) => setAddEmail(e.target.value)}
                   className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-sm font-bold text-white text-right font-mono"
                 />
+              </div>
+              <div className="space-y-2 text-right">
+                <label className="text-[11px] font-bold text-gray-400 block font-cairo">عملة الذمة الافتراضية:</label>
+                <select
+                  value={addLiabilityCurrency}
+                  onChange={(e) => setAddLiabilityCurrency(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-sm font-bold text-white text-right font-cairo appearance-none"
+                >
+                  {availableCurrencies.length > 0 ? (
+                    availableCurrencies.map((curr) => (
+                      <option key={curr.id} value={curr.name}>
+                        {curr.name === 'USD' ? 'دولار (USD)' : curr.name === 'SAR' ? 'ريال سعودي (SAR)' : curr.name === 'YER' ? 'ريال يمني (YER)' : curr.name === 'EUR' ? 'يورو (EUR)' : curr.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="USD">دولار (USD)</option>
+                  )}
+                </select>
               </div>
 
               <div className="space-y-2 md:col-span-2 text-right">

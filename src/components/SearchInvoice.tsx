@@ -705,6 +705,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
           customerNumber: customer.customerNumber,
           customerPhone: customer.phone1,
           currency: getCustomerCurrencyLabel(customer.id!),
+          liabilityCurrency: customer.liabilityCurrency || 'USD',
           entries: enrichedEntries
         }
       }

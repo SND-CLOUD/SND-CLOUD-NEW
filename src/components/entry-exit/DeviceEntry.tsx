@@ -167,6 +167,32 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
     };
   }, []);
 
+  useEffect(() => {
+    let matchedCustomer: Customer | undefined;
+    if (selectedCustomerId) {
+      matchedCustomer = existingCustomers.find(c => c.id === selectedCustomerId);
+    } else if (customer.name.trim()) {
+      matchedCustomer = existingCustomers.find(c => c.name.trim().toLowerCase() === customer.name.trim().toLowerCase());
+    }
+
+    if (matchedCustomer && matchedCustomer.liabilityCurrency) {
+      const uCurrency = matchedCustomer.liabilityCurrency.trim().toUpperCase();
+      
+      if (['SAR', 'ريال سعودي'].includes(uCurrency)) {
+        setCurrency('SAR');
+      } else if (['YER', 'ريال يمني'].includes(uCurrency)) {
+        setCurrency('YER');
+      } else if (['USD', 'دولار'].includes(uCurrency)) {
+        setCurrency('USD');
+      } else {
+        // If it's a known currency not handled, maybe default to USD
+        setCurrency('USD');
+      }
+    } else {
+      setCurrency('USD');
+    }
+  }, [customer.name, selectedCustomerId, existingCustomers]);
+
   const [pendingNewDevices, setPendingNewDevices] = useState<{categories: string[], models: string[]} | null>(null);
 
   const handlePreAddDeviceToTable = () => {
@@ -515,6 +541,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
       notes: newCust.notes || ''
     });
     setSelectedCustomerId(newCust.id || null);
+    setExistingCustomers(prev => [...prev, newCust]);
     setShowAddCustomerModal(false);
   };
 
@@ -670,7 +697,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
                        تفاصيل العميل
                      </h3>
                      
-                     <div className="flex flex-row items-center justify-end gap-3 shrink-0 flex-wrap">
+                     <div className="flex flex-row items-center justify-end gap-3 shrink-0 flex-wrap pointer-events-none opacity-85" title="تتغير العملة تلقائياً حسب عملة حساب العميل">
                       <label className="flex items-center gap-1 cursor-pointer group">
                         <input type="radio" value="USD" checked={currency === 'USD'} onChange={(e) => setCurrency(e.target.value as 'USD' | 'SAR' | 'YER')} className="w-3.5 h-3.5 accent-orange-500 cursor-pointer mb-0.5" />
                         <span className={`text-[10px] font-bold transition-colors ${currency === 'USD' ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'}`}>دولار </span>
