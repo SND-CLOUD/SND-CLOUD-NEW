@@ -737,17 +737,37 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
           }
         }
 
-        // Clear non-admin users in Firestore and reset admin user
+        // Clear all users in Firestore and reset only one primary admin user to prevent duplication
         setProgress({ active: true, value: 45, label: 'جاري تهيئة حسابات المستخدمين في السحاب...' });
         const usersSnap = await getDocs(collection(db, 'users'));
         for (const docSnap of usersSnap.docs) {
-          const uData = docSnap.data();
-          if (uData.username === 'admin') {
-            await updateDoc(docSnap.ref, { password: 'admin', isActive: true, isPrimary: true, userNumber: 100 });
+          if (docSnap.id === 'primary-admin') {
+            await setDoc(docSnap.ref, {
+              id: 'primary-admin',
+              username: 'admin',
+              password: 'admin',
+              name: 'المدير العام',
+              role: 'admin',
+              isPrimary: true,
+              userNumber: 100,
+              isActive: true
+            });
           } else {
+            // Delete all other users, including any duplicate admin entries with other IDs
             await deleteDoc(docSnap.ref).catch(e => console.warn(`Error deleting user doc ${docSnap.id}:`, e));
           }
         }
+        // Ensure that the 'primary-admin' doc is always present
+        await setDoc(doc(db, 'users', 'primary-admin'), {
+          id: 'primary-admin',
+          username: 'admin',
+          password: 'admin',
+          name: 'المدير العام',
+          role: 'admin',
+          isPrimary: true,
+          userNumber: 100,
+          isActive: true
+        });
       } catch (fsErr) {
         console.warn('Firestore reset failed/skipped (offline or permission issue):', fsErr);
       }
@@ -772,15 +792,11 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         }
       }
 
-      // Clear non-admin users in SQLite and reset admin
+      // Clear all users in SQLite and insert exactly one primary admin
       try {
-        await localDb.run(`DELETE FROM users WHERE username != 'admin'`);
-        await localDb.run(`UPDATE users SET password = 'admin', isActive = 1, isPrimary = 1, userNumber = 100 WHERE username = 'admin'`);
-        const checkAdmin = await localDb.query(`SELECT * FROM users WHERE username = 'admin'`);
-        if (!checkAdmin.values || checkAdmin.values.length === 0) {
-          await localDb.run(`INSERT INTO users (id, username, password, name, role, isPrimary, userNumber, isActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
-            ['primary-admin', 'admin', 'admin', 'المدير العام', 'admin', 1, 100, 1]);
-        }
+        await localDb.run(`DELETE FROM users`);
+        await localDb.run(`INSERT INTO users (id, username, password, name, role, isPrimary, userNumber, isActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+          ['primary-admin', 'admin', 'admin', 'المدير العام', 'admin', 1, 100, 1]);
       } catch (e) {
         console.error(`Error resetting users in SQLite`, e);
       }

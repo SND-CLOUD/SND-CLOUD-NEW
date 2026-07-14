@@ -30,7 +30,19 @@ class LocalDatabase {
   }
 
   async initialize(): Promise<void> {
-    if (this.db) return;
+    if (this.db) {
+      try {
+        const isOpen = await this.db.isDBOpen();
+        if (isOpen.result) {
+          return;
+        }
+        await this.db.open();
+        return;
+      } catch (err) {
+        console.warn('Database connection check/open failed, resetting connection...', err);
+        this.db = null;
+      }
+    }
     if (this.initializingPromise) return this.initializingPromise;
 
     this.initializingPromise = (async () => {
@@ -320,6 +332,25 @@ class LocalDatabase {
           );
         `);
       } catch (err) {}
+
+      // Ensure outbox table is created for existing databases as well
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS outbox (
+            id TEXT PRIMARY KEY,
+            tableName TEXT,
+            recordId TEXT,
+            action TEXT,
+            payload TEXT,
+            timestamp TEXT,
+            status TEXT DEFAULT 'PENDING',
+            retryCount INTEGER DEFAULT 0,
+            transactionGroupId TEXT
+          );
+        `);
+      } catch (err) {
+        console.error('Failed to create outbox table', err);
+      }
 
       // Attempt to add extra financial columns to existing vault_transactions table if needed
       try {
@@ -776,6 +807,16 @@ class LocalDatabase {
       if (!this.db) {
         console.error('Database not initialized. Attempting recovery...');
         await this.initialize();
+      } else {
+        try {
+          const isOpen = await this.db.isDBOpen();
+          if (!isOpen.result) {
+            console.warn('Database exists but is closed. Re-opening...');
+            await this.db.open();
+          }
+        } catch (err) {
+          console.error('Failed to verify/open database inside query:', err);
+        }
       }
       if (!this.db) throw new Error('Failed to initialize local database connection.');
       return this.db.query(sql, params);
@@ -788,6 +829,16 @@ class LocalDatabase {
       if (!this.db) {
         console.error('Database not initialized. Attempting recovery...');
         await this.initialize();
+      } else {
+        try {
+          const isOpen = await this.db.isDBOpen();
+          if (!isOpen.result) {
+            console.warn('Database exists but is closed. Re-opening...');
+            await this.db.open();
+          }
+        } catch (err) {
+          console.error('Failed to verify/open database inside run:', err);
+        }
       }
       if (!this.db) throw new Error('Failed to initialize local database connection.');
       const result = await this.db.run(sql, params);

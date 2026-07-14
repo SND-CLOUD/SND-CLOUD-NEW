@@ -154,6 +154,69 @@
         "notes": { "type": "string" }
       },
       "required": ["currency", "amount", "invoiceNumber", "userName", "userId", "timestamp"]
+    },
+    "CompanyDetails": {
+      "title": "Company Details",
+      "description": "Company and bank details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    },
+    "ApprovalAction": {
+      "title": "Approval Action",
+      "description": "Approval actions for maintenance items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "itemId": { "type": "string" }
+      }
+    },
+    "MaintenanceAction": {
+      "title": "Maintenance Action",
+      "description": "Log of actions taken on a device during maintenance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "itemId": { "type": "string" }
+      }
+    },
+    "Engineer": {
+      "title": "Engineer",
+      "description": "Engineers working on maintenance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "DocumentOutput": {
+      "title": "Document Output",
+      "description": "Printed document outputs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      }
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Items in the inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "number" },
+        "minQuantity": { "type": "number" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -168,6 +231,10 @@
     "/invoice_items/{itemId}": {
       "schema": "InvoiceItem",
       "description": "Individual items/devices in invoices"
+    },
+    "/inventory_items/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Inventory items records"
     },
     "/currencies/{currencyId}": {
       "schema": "Currency",
@@ -200,6 +267,26 @@
     "/vault_transactions/{transactionId}": {
       "schema": "VaultTransaction",
       "description": "Records of the safe/vault activity"
+    },
+    "/company_details/{docId}": {
+      "schema": "CompanyDetails",
+      "description": "Company details information"
+    },
+    "/approval_actions/{docId}": {
+      "schema": "ApprovalAction",
+      "description": "Approval actions for maintenance items"
+    },
+    "/maintenance_actions/{actionId}": {
+      "schema": "MaintenanceAction",
+      "description": "Maintenance action logs"
+    },
+    "/engineers/{engineerId}": {
+      "schema": "Engineer",
+      "description": "Engineer records"
+    },
+    "/document_outputs/{id}": {
+      "schema": "DocumentOutput",
+      "description": "Printed document outputs"
     }
   }
 }

@@ -76,9 +76,9 @@ export class ProviderFactory {
     if (mode === 'LOCAL') return 'LOCAL';
     if (mode === 'CLOUD') return 'CLOUD';
     
-    // AUTO mode: check connection status
-    const online = typeof navigator !== 'undefined' ? navigator.onLine : this.isOnline;
-    return online ? 'CLOUD' : 'LOCAL';
+    // AUTO mode: Always use LOCAL first for robust offline capabilities.
+    // The background SyncEngine will replicate changes from the SQLite outbox.
+    return 'LOCAL';
   }
 
   static getProvider(): IDataProvider {

@@ -134,10 +134,16 @@ export class FirebaseProvider implements IDataProvider {
             forEach: (cb: any) => docs.forEach(cb)
           });
         },
-        errorCallback
+        errorCallback || ((err: any) => {
+          console.warn(`[FirebaseProvider] onSnapshot error on "${collectionName}":`, err);
+        })
       );
     } catch (err) {
-      if (errorCallback) errorCallback(err);
+      if (errorCallback) {
+        errorCallback(err);
+      } else {
+        console.warn(`[FirebaseProvider] onSnapshot setup exception on "${collectionName}":`, err);
+      }
       return () => {};
     }
   }
@@ -168,10 +174,16 @@ export class FirebaseProvider implements IDataProvider {
             });
           }
         },
-        errorCallback
+        errorCallback || ((err: any) => {
+          console.warn(`[FirebaseProvider] onSnapshotDoc error on "${collectionName}/${id}":`, err);
+        })
       );
     } catch (err) {
-      if (errorCallback) errorCallback(err);
+      if (errorCallback) {
+        errorCallback(err);
+      } else {
+        console.warn(`[FirebaseProvider] onSnapshotDoc setup exception on "${collectionName}/${id}":`, err);
+      }
       return () => {};
     }
   }

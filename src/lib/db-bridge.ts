@@ -86,10 +86,13 @@ export const deleteDoc = async (docRef: any) => {
 
 export const onSnapshot = (queryRef: any, callback: any, errorCallback?: any) => {
   const isDoc = queryRef.type === 'doc';
+  const finalErrorCallback = errorCallback || ((err: any) => {
+    console.warn(`[db-bridge] Snapshot listener error on ${isDoc ? 'document' : 'collection'} "${queryRef.name}":`, err);
+  });
   if (isDoc) {
-    return getProvider().onSnapshotDoc(queryRef.name, queryRef.id, callback, errorCallback);
+    return getProvider().onSnapshotDoc(queryRef.name, queryRef.id, callback, finalErrorCallback);
   } else {
-    return getProvider().onSnapshot(queryRef.name, queryRef.constraints, callback, errorCallback);
+    return getProvider().onSnapshot(queryRef.name, queryRef.constraints, callback, finalErrorCallback);
   }
 };
 

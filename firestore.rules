@@ -44,6 +44,12 @@ service cloud.firestore {
              (!data.keys().hasAll(['userId']) || data.userId is string);
     }
 
+    function isValidInventory(data) {
+      return (!data.keys().hasAll(['name']) || data.name is string) &&
+             (!data.keys().hasAll(['quantity']) || data.quantity is number) &&
+             (!data.keys().hasAll(['price']) || data.price is number);
+    }
+
     // --- Matches ---
 
     match /customers/{customerId} {
@@ -64,6 +70,13 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidInvoiceItem(incoming());
       allow update: if isValidInvoiceItem(incoming());
+      allow delete: if true;
+    }
+
+    match /inventory_items/{itemId} {
+      allow read: if true;
+      allow create: if isValidInventory(incoming());
+      allow update: if isValidInventory(incoming());
       allow delete: if true;
     }
 
@@ -108,6 +121,14 @@ service cloud.firestore {
     }
 
     match /maintenance_actions/{actionId} {
+      allow read, write: if true;
+    }
+
+    match /company_details/{docId} {
+      allow read, write: if true;
+    }
+
+    match /approval_actions/{docId} {
       allow read, write: if true;
     }
 

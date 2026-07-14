@@ -77,7 +77,40 @@ export class LocalProvider implements IDataProvider {
     };
   }
 
-  async setDoc(collectionName: string, id: string, data: any, options?: any): Promise<void> {
+  private async queueInOutbox(
+    tableName: string,
+    recordId: string,
+    action: 'SET' | 'UPDATE' | 'DELETE',
+    payload: any,
+    transactionGroupId?: string
+  ): Promise<void> {
+    const mode = localStorage.getItem('snd_db_provider_mode') || 'LOCAL';
+    if (mode !== 'AUTO' || transactionGroupId === 'BYPASS_OUTBOX') return;
+
+    const outboxId = 'out-' + generateUUID();
+    const timestamp = new Date().toISOString();
+    const payloadStr = payload ? JSON.stringify(payload) : null;
+
+    try {
+      await localDb.run(
+        `INSERT INTO outbox (id, tableName, recordId, action, payload, timestamp, status, retryCount, transactionGroupId) 
+         VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, ?)`,
+        [outboxId, tableName, recordId, action, payloadStr, timestamp, transactionGroupId || null]
+      );
+      console.log(`Outbox queued: ${action} on ${tableName}/${recordId} (Tx: ${transactionGroupId || 'none'})`);
+
+      // Trigger sync in background if online
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        import('./SyncEngine').then(({ SyncEngine }) => {
+          SyncEngine.syncAll().catch(e => console.error('Failed to run auto-sync on queue:', e));
+        });
+      }
+    } catch (e) {
+      console.error('Failed to insert into outbox table:', e);
+    }
+  }
+
+  async setDoc(collectionName: string, id: string, data: any, options?: any, transactionGroupId?: string): Promise<void> {
     const cleanedData = { ...data };
     Object.keys(cleanedData).forEach(field => {
       const val = cleanedData[field];
@@ -119,6 +152,9 @@ export class LocalProvider implements IDataProvider {
       }
     }
 
+    // Queue in Outbox
+    await this.queueInOutbox(collectionName, id, 'SET', { data, options }, transactionGroupId);
+
     // Trigger notification
     const res = await localDb.query(`SELECT * FROM ${collectionName}`);
     localDb.notify(collectionName, res.values || []);
@@ -130,7 +166,7 @@ export class LocalProvider implements IDataProvider {
     return { id };
   }
 
-  async updateDoc(collectionName: string, id: string, data: any): Promise<void> {
+  async updateDoc(collectionName: string, id: string, data: any, transactionGroupId?: string): Promise<void> {
     const cleanedData = { ...data };
     const increments: { key: string, value: number }[] = [];
 
@@ -158,18 +194,25 @@ export class LocalProvider implements IDataProvider {
       updateParts.push(`${inc.key} = COALESCE(${inc.key}, 0) + ${inc.value}`);
     });
 
-    if (updateParts.length === 0) return;
+    if (updateParts.length > 0) {
+      const sql = `UPDATE ${collectionName} SET ${updateParts.join(', ')} WHERE id = ?`;
+      await localDb.run(sql, [...Object.values(cleanedData), id]);
+    }
 
-    const sql = `UPDATE ${collectionName} SET ${updateParts.join(', ')} WHERE id = ?`;
-    await localDb.run(sql, [...Object.values(cleanedData), id]);
+    // Queue in Outbox
+    await this.queueInOutbox(collectionName, id, 'UPDATE', data, transactionGroupId);
 
     // Trigger notification
     const res = await localDb.query(`SELECT * FROM ${collectionName}`);
     localDb.notify(collectionName, res.values || []);
   }
 
-  async deleteDoc(collectionName: string, id: string): Promise<void> {
+  async deleteDoc(collectionName: string, id: string, transactionGroupId?: string): Promise<void> {
     await localDb.run(`DELETE FROM ${collectionName} WHERE id = ?`, [id]);
+
+    // Queue in Outbox
+    await this.queueInOutbox(collectionName, id, 'DELETE', null, transactionGroupId);
+
     const res = await localDb.query(`SELECT * FROM ${collectionName}`);
     localDb.notify(collectionName, res.values || []);
   }
@@ -275,11 +318,12 @@ export class LocalProvider implements IDataProvider {
   }
 
   async runTransaction(updateFunction: any): Promise<any> {
+    const txGroupId = 'tx-' + generateUUID();
     const transaction = {
       get: async (docRef: any) => this.getDoc(docRef.name, docRef.id),
-      set: async (docRef: any, data: any) => this.setDoc(docRef.name, docRef.id, data),
-      update: async (docRef: any, data: any) => this.updateDoc(docRef.name, docRef.id, data),
-      delete: async (docRef: any) => this.deleteDoc(docRef.name, docRef.id)
+      set: async (docRef: any, data: any) => this.setDoc(docRef.name, docRef.id, data, undefined, txGroupId),
+      update: async (docRef: any, data: any) => this.updateDoc(docRef.name, docRef.id, data, txGroupId),
+      delete: async (docRef: any) => this.deleteDoc(docRef.name, docRef.id, txGroupId)
     };
     return await updateFunction(transaction);
   }
@@ -291,10 +335,11 @@ export class LocalProvider implements IDataProvider {
       update: (docRef: any, data: any, options?: any) => operations.push({ type: 'update', ref: docRef, data, options }),
       delete: (docRef: any) => operations.push({ type: 'delete', ref: docRef }),
       commit: async () => {
+        const txGroupId = 'tx-' + generateUUID();
         for (const op of operations) {
-          if (op.type === 'set') await this.setDoc(op.ref.name, op.ref.id, op.data, op.options);
-          if (op.type === 'update') await this.updateDoc(op.ref.name, op.ref.id, op.data);
-          if (op.type === 'delete') await this.deleteDoc(op.ref.name, op.ref.id);
+          if (op.type === 'set') await this.setDoc(op.ref.name, op.ref.id, op.data, op.options, txGroupId);
+          if (op.type === 'update') await this.updateDoc(op.ref.name, op.ref.id, op.data, txGroupId);
+          if (op.type === 'delete') await this.deleteDoc(op.ref.name, op.ref.id, txGroupId);
         }
       }
     };
