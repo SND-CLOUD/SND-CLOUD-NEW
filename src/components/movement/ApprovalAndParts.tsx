@@ -2001,27 +2001,7 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
         </div>
       </div>
 
-      {/* Hero Stats */}
-      <div className="px-4 md:px-8">
-        <div className="bg-[#1a1a1a] rounded-3xl p-6 md:p-8 border border-white/5 shadow-2xl relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl -translate-y-20 translate-x-10"></div>
-          <div className="bg-black/40 border border-white/10 p-4 rounded-2xl w-full sm:w-auto text-center sm:min-w-[200px] z-10 flex gap-4 mr-0 ml-auto select-none">
-            <div>
-              <div className="text-xs text-amber-500 font-bold uppercase tracking-widest mb-1">
-                {subTab === 'approval' ? 'فواتير بانتظار الموافقة' : 'فواتير بانتظار قطع الغيار'}
-              </div>
-              <div className="text-3xl font-black font-mono text-white">{pendingInvoices.length}</div>
-            </div>
-            <div className="w-px bg-white/10 mx-4"></div>
-            <div>
-              <div className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">
-                {subTab === 'approval' ? 'أجهزة بانتظار الموافقة' : 'أجهزة بانتظار قطع الغيار'}
-              </div>
-              <div className="text-3xl font-black font-mono text-white">{totalAwaitingDevices}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+
 
       {/* Search Input */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between px-4 md:px-8">

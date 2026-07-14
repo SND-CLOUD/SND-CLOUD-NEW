@@ -1,0 +1,345 @@
+import { IDataProvider } from './IDataProvider';
+import { localDb } from '../lib/local-db';
+import { generateUUID } from './utils';
+
+export class LocalProvider implements IDataProvider {
+  async getDoc(collectionName: string, id: string): Promise<any> {
+    if (collectionName === 'settings') {
+      const res = await localDb.query('SELECT * FROM settings WHERE id = ?', [id]);
+      if (res.values && res.values.length > 0) {
+        return {
+          exists: () => true,
+          id,
+          data: () => JSON.parse(res.values[0].data)
+        };
+      }
+      return { id, exists: () => false, data: () => undefined };
+    }
+
+    const res = await localDb.query(`SELECT * FROM ${collectionName} WHERE id = ?`, [id]);
+    if (res.values && res.values.length > 0) {
+      const data = { ...res.values[0] };
+      this.wrapDatesInObject(data);
+      return {
+        exists: () => true,
+        id,
+        data: () => data
+      };
+    }
+    return { id, exists: () => false, data: () => undefined };
+  }
+
+  async getDocs(collectionName: string, constraints?: any[]): Promise<any> {
+    let sql = `SELECT * FROM ${collectionName}`;
+    const params: any[] = [];
+
+    const wheres = constraints?.filter((c: any) => c.type === 'where') || [];
+    if (wheres.length > 0) {
+      sql += ' WHERE ' + wheres.map((w: any) => {
+        params.push(w.value);
+        const op = w.op === '==' ? '=' : w.op;
+        return `${w.field} ${op} ?`;
+      }).join(' AND ');
+    }
+
+    const orders = constraints?.filter((c: any) => c.type === 'orderBy') || [];
+    if (orders.length > 0) {
+      sql += ' ORDER BY ' + orders.map((o: any) => `${o.field} ${o.dir}`).join(', ');
+    }
+
+    const lim = constraints?.find((c: any) => c.type === 'limit');
+    if (lim) {
+      sql += ` LIMIT ${lim.value}`;
+    }
+
+    const res = await localDb.query(sql, params);
+    const docs = (res.values || []).map(rawDoc => {
+      const docData = { ...rawDoc };
+      if (docData.updates && typeof docData.updates === 'string') {
+        try { docData.updates = JSON.parse(docData.updates); } catch (e) {}
+      }
+      if (docData.permissions && typeof docData.permissions === 'string') {
+        try { docData.permissions = JSON.parse(docData.permissions); } catch (e) {}
+      }
+      this.wrapDatesInObject(docData);
+      return {
+        id: docData.id,
+        ref: { name: collectionName, id: docData.id, path: `${collectionName}/${docData.id}` },
+        data: () => docData
+      };
+    });
+
+    return {
+      docs,
+      empty: docs.length === 0,
+      size: docs.length,
+      forEach: (cb: any) => docs.forEach(cb)
+    };
+  }
+
+  async setDoc(collectionName: string, id: string, data: any, options?: any): Promise<void> {
+    const cleanedData = { ...data };
+    Object.keys(cleanedData).forEach(field => {
+      const val = cleanedData[field];
+      if (val && typeof val === 'object' && typeof val.toISOString === 'function') {
+        try {
+          cleanedData[field] = val.toISOString();
+        } catch (e) {}
+      }
+    });
+
+    if (collectionName === 'settings') {
+      const existing = await localDb.query('SELECT * FROM settings WHERE id = ?', [id]);
+      if (existing.values && existing.values.length > 0) {
+        const merged = options?.merge ? { ...JSON.parse(existing.values[0].data), ...cleanedData } : cleanedData;
+        await localDb.run('UPDATE settings SET data = ? WHERE id = ?', [JSON.stringify(merged), id]);
+      } else {
+        await localDb.run('INSERT INTO settings (id, data) VALUES (?, ?)', [id, JSON.stringify(cleanedData)]);
+      }
+    } else {
+      const existing = await localDb.query(`SELECT * FROM ${collectionName} WHERE id = ?`, [id]);
+      const finalData = (options?.merge && existing.values && existing.values.length > 0)
+        ? { ...existing.values[0], ...cleanedData }
+        : cleanedData;
+
+      Object.keys(finalData).forEach(key => {
+        if (finalData[key] && typeof finalData[key] === 'object' && !finalData[key].toISOString) {
+          finalData[key] = JSON.stringify(finalData[key]);
+        }
+      });
+
+      const fields = Object.keys(finalData);
+      const placeholders = fields.map(() => '?').join(', ');
+      const updatePlaceholders = fields.map(f => `${f} = ?`).join(', ');
+
+      if (existing.values && existing.values.length > 0) {
+        await localDb.run(`UPDATE ${collectionName} SET ${updatePlaceholders} WHERE id = ?`, [...Object.values(finalData), id]);
+      } else {
+        await localDb.run(`INSERT INTO ${collectionName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`, [id, ...Object.values(finalData)]);
+      }
+    }
+
+    // Trigger notification
+    const res = await localDb.query(`SELECT * FROM ${collectionName}`);
+    localDb.notify(collectionName, res.values || []);
+  }
+
+  async addDoc(collectionName: string, data: any): Promise<{ id: string }> {
+    const id = data.id || generateUUID();
+    await this.setDoc(collectionName, id, { ...data, id });
+    return { id };
+  }
+
+  async updateDoc(collectionName: string, id: string, data: any): Promise<void> {
+    const cleanedData = { ...data };
+    const increments: { key: string, value: number }[] = [];
+
+    Object.keys(cleanedData).forEach(key => {
+      const val = cleanedData[key];
+      if (val && typeof val === 'object') {
+        if (val.type === 'increment') {
+          increments.push({ key, value: val.value });
+          delete cleanedData[key];
+          return;
+        }
+        if (!val.toISOString) {
+          cleanedData[key] = JSON.stringify(val);
+        } else {
+          try {
+            cleanedData[key] = val.toISOString();
+          } catch (e) {}
+        }
+      }
+    });
+
+    const fields = Object.keys(cleanedData);
+    const updateParts = fields.map(f => `${f} = ?`);
+    increments.forEach(inc => {
+      updateParts.push(`${inc.key} = COALESCE(${inc.key}, 0) + ${inc.value}`);
+    });
+
+    if (updateParts.length === 0) return;
+
+    const sql = `UPDATE ${collectionName} SET ${updateParts.join(', ')} WHERE id = ?`;
+    await localDb.run(sql, [...Object.values(cleanedData), id]);
+
+    // Trigger notification
+    const res = await localDb.query(`SELECT * FROM ${collectionName}`);
+    localDb.notify(collectionName, res.values || []);
+  }
+
+  async deleteDoc(collectionName: string, id: string): Promise<void> {
+    await localDb.run(`DELETE FROM ${collectionName} WHERE id = ?`, [id]);
+    const res = await localDb.query(`SELECT * FROM ${collectionName}`);
+    localDb.notify(collectionName, res.values || []);
+  }
+
+  onSnapshot(
+    collectionName: string,
+    constraints: any[] | undefined,
+    callback: (snapshot: any) => void,
+    errorCallback?: any
+  ): () => void {
+    const unsubscribe = localDb.subscribe(collectionName, (data) => {
+      try {
+        let filtered = [...data];
+        const wheres = constraints?.filter((c: any) => c.type === 'where') || [];
+        wheres.forEach((w: any) => {
+          filtered = filtered.filter(item => {
+            if (w.op === '==' || w.op === '=') return item[w.field] === w.value;
+            if (w.op === '>') return item[w.field] > w.value;
+            if (w.op === '<') return item[w.field] < w.value;
+            if (w.op === '>=') return item[w.field] >= w.value;
+            if (w.op === '<=') return item[w.field] <= w.value;
+            return true;
+          });
+        });
+
+        const orders = constraints?.filter((c: any) => c.type === 'orderBy') || [];
+        orders.forEach((o: any) => {
+          filtered.sort((a, b) => {
+            if (o.dir === 'desc') return b[o.field] > a[o.field] ? 1 : -1;
+            return a[o.field] > b[o.field] ? 1 : -1;
+          });
+        });
+
+        const docs = filtered.map(doc => {
+          const docData = { ...doc };
+          if (docData.updates && typeof docData.updates === 'string') {
+            try { docData.updates = JSON.parse(docData.updates); } catch (e) {}
+          }
+          if (docData.permissions && typeof docData.permissions === 'string') {
+            try { docData.permissions = JSON.parse(docData.permissions); } catch (e) {}
+          }
+          this.wrapDatesInObject(docData);
+          return {
+            id: docData.id,
+            ref: { name: collectionName, id: docData.id, path: `${collectionName}/${docData.id}` },
+            data: () => docData
+          };
+        });
+
+        callback({
+          docs,
+          empty: filtered.length === 0,
+          size: filtered.length,
+          forEach: (cb: any) => docs.forEach(cb)
+        });
+      } catch (err) {
+        if (errorCallback) errorCallback(err);
+      }
+    });
+
+    return unsubscribe;
+  }
+
+  onSnapshotDoc(
+    collectionName: string,
+    id: string,
+    callback: (snapshot: any) => void,
+    errorCallback?: any
+  ): () => void {
+    const unsubscribe = localDb.subscribe(collectionName, (data) => {
+      try {
+        const rawDoc = data.find((d: any) => d.id === id);
+        if (rawDoc) {
+          const docData = { ...rawDoc };
+          if (collectionName === 'settings' && docData.data) {
+            try {
+              const parsed = JSON.parse(docData.data);
+              Object.assign(docData, parsed);
+            } catch (e) {}
+          }
+          if (docData.permissions && typeof docData.permissions === 'string') {
+            try { docData.permissions = JSON.parse(docData.permissions); } catch (e) {}
+          }
+          this.wrapDatesInObject(docData);
+          callback({
+            exists: () => true,
+            id,
+            data: () => docData
+          });
+        } else {
+          callback({
+            exists: () => false,
+            id,
+            data: () => undefined
+          });
+        }
+      } catch (err) {
+        if (errorCallback) errorCallback(err);
+      }
+    });
+
+    return unsubscribe;
+  }
+
+  async runTransaction(updateFunction: any): Promise<any> {
+    const transaction = {
+      get: async (docRef: any) => this.getDoc(docRef.name, docRef.id),
+      set: async (docRef: any, data: any) => this.setDoc(docRef.name, docRef.id, data),
+      update: async (docRef: any, data: any) => this.updateDoc(docRef.name, docRef.id, data),
+      delete: async (docRef: any) => this.deleteDoc(docRef.name, docRef.id)
+    };
+    return await updateFunction(transaction);
+  }
+
+  writeBatch(): any {
+    const operations: any[] = [];
+    return {
+      set: (docRef: any, data: any, options?: any) => operations.push({ type: 'set', ref: docRef, data, options }),
+      update: (docRef: any, data: any, options?: any) => operations.push({ type: 'update', ref: docRef, data, options }),
+      delete: (docRef: any) => operations.push({ type: 'delete', ref: docRef }),
+      commit: async () => {
+        for (const op of operations) {
+          if (op.type === 'set') await this.setDoc(op.ref.name, op.ref.id, op.data, op.options);
+          if (op.type === 'update') await this.updateDoc(op.ref.name, op.ref.id, op.data);
+          if (op.type === 'delete') await this.deleteDoc(op.ref.name, op.ref.id);
+        }
+      }
+    };
+  }
+
+  // --- Specific Domain Methods ---
+  async addInvoice(invoice: any): Promise<{ id: string }> {
+    const id = invoice.id || generateUUID();
+    const finalInvoice = { ...invoice, id };
+    await this.setDoc('invoices', id, finalInvoice);
+    return { id };
+  }
+
+  async getInvoices(): Promise<any[]> {
+    const result = await this.getDocs('invoices');
+    return result.docs.map((doc: any) => doc.data());
+  }
+
+  async getCustomer(id: string): Promise<any> {
+    const result = await this.getDoc('customers', id);
+    return result.exists() ? result.data() : null;
+  }
+
+  async savePayment(payment: any): Promise<void> {
+    const id = payment.id || generateUUID();
+    const finalPayment = { ...payment, id };
+    await this.setDoc('vault_transactions', id, finalPayment);
+  }
+
+  // --- Helper Methods ---
+  private wrapDatesInObject(obj: any) {
+    if (!obj) return;
+    ['createdAt', 'updatedAt', 'timestamp', 'actionDate', 'deliveredAt', 'output_datetime'].forEach(field => {
+      if (obj[field] && (typeof obj[field] === 'string' || typeof obj[field] === 'number')) {
+        const d = new Date(typeof obj[field] === 'number' && obj[field].toString().length <= 10 ? obj[field] * 1000 : obj[field]);
+        if (!isNaN(d.getTime())) {
+          obj[field] = {
+            toDate: () => d,
+            toMillis: () => d.getTime(),
+            toISOString: () => d.toISOString()
+          };
+        }
+      }
+    });
+  }
+}
+
+export const LocalProviderInstance = new LocalProvider();

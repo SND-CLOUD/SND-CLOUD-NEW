@@ -42,8 +42,14 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   // Shop details states
   const [activeCategoriesEngineersModal, setActiveCategoriesEngineersModal] = useState<'categories' | 'engineers' | null>(null);
   const [activeAccountingInputsModal, setActiveAccountingInputsModal] = useState<'accounting' | 'details' | 'backup' | null>(null);
-  const [generalSubTab, setGeneralSubTab] = useState<'language' | 'details' | 'advanced'>('language');
-  const [activeGeneralModal, setActiveGeneralModal] = useState<'language' | 'details' | 'advanced' | null>(null);
+  const [generalSubTab, setGeneralSubTab] = useState<'language' | 'details' | 'advanced' | 'database'>('language');
+  const [activeGeneralModal, setActiveGeneralModal] = useState<'language' | 'details' | 'advanced' | 'database' | null>(null);
+  
+  // Database configuration states
+  const [dbMode, setDbMode] = useState<'LOCAL' | 'CLOUD' | 'AUTO'>('LOCAL');
+  const [activeProvider, setActiveProvider] = useState<'LOCAL' | 'CLOUD'>('LOCAL');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [appearance, setAppearance] = useState<'normal' | 'dark'>('normal');
   const [printPaperSize, setPrintPaperSize] = useState<'A4' | '80mm'>('A4');
   const [shopName, setShopName] = useState('عالم الصيانة والتجارة');
@@ -111,14 +117,17 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
 
   const refreshStats = async () => {
     try {
-      const invoicesSnap = await getDocs(collection(db, 'invoices'));
-      const customersSnap = await getDocs(collection(db, 'customers'));
-      const maintenanceSnap = await getDocs(collection(db, 'maintenance_actions'));
+      const { ProviderFactory } = await import('../data/ProviderFactory');
+      const provider = ProviderFactory.getProvider();
+      
+      const invoicesSnap = await provider.getDocs('invoices');
+      const customersSnap = await provider.getDocs('customers');
+      const maintenanceSnap = await provider.getDocs('maintenance_actions');
       
       setStatsData({
-        invoices: invoicesSnap.docs.length,
-        customers: customersSnap.docs.length,
-        maintenance: maintenanceSnap.docs.length,
+        invoices: invoicesSnap.docs?.length || 0,
+        customers: customersSnap.docs?.length || 0,
+        maintenance: maintenanceSnap.docs?.length || 0,
         support: 0
       });
     } catch (e) {
@@ -265,6 +274,14 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       } catch (shopErr) {
         console.warn("Failed to fetch shop settings from Firebase:", shopErr);
       }
+
+      try {
+        const { ProviderFactory } = await import('../data/ProviderFactory');
+        setDbMode(ProviderFactory.getMode());
+        setActiveProvider(ProviderFactory.getActiveProviderType());
+      } catch (dbErr) {
+        console.warn("Failed to load database provider factory settings:", dbErr);
+      }
     };
     fetch();
     refreshBackupCount();
@@ -284,6 +301,35 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       }
     } catch (e) {
       setBackupCount(0);
+    }
+  };
+
+  const handleSaveDbMode = async (mode: 'LOCAL' | 'CLOUD' | 'AUTO') => {
+    setDbMode(mode);
+    try {
+      const { ProviderFactory } = await import('../data/ProviderFactory');
+      ProviderFactory.setMode(mode);
+    } catch (err) {
+      console.error("Failed to save database mode:", err);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    setSyncLoading(true);
+    setSyncResult({ type: null, message: '' });
+    try {
+      const { SyncEngine } = await import('../data/SyncEngine');
+      const res = await SyncEngine.syncAll();
+      if (res.success) {
+        setSyncResult({ type: 'success', message: res.message });
+        await refreshStats();
+      } else {
+        setSyncResult({ type: 'error', message: res.message });
+      }
+    } catch (err: any) {
+      setSyncResult({ type: 'error', message: err.message || 'حدث خطأ غير متوقع أثناء المزامنة.' });
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -938,6 +984,27 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                         </div>
                         <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
                       </button>
+
+                      {/* 3. Database & Syncing Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGeneralSubTab('database');
+                          setActiveGeneralModal('database');
+                        }}
+                        className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
+                            <Database size={22} />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-white text-base">قاعدة البيانات والمزامنة</h3>
+                            <p className="text-xs text-gray-400 mt-1">التحكم في مصدر البيانات والتبديل بين المحلي والسحابي والمزامنة</p>
+                          </div>
+                        </div>
+                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
+                      </button>
                     </div>
 
                     {/* Modals for general settings options */}
@@ -956,8 +1023,10 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                               <h3 className="text-lg font-black text-white flex items-center gap-2">
                                 {activeGeneralModal === 'language' && <Languages className="text-orange-500" size={20} />}
                                 {activeGeneralModal === 'advanced' && <SettingsIcon className="text-orange-500" size={20} />}
+                                {activeGeneralModal === 'database' && <Database className="text-orange-500" size={20} />}
                                 {activeGeneralModal === 'language' && 'اللغة والتحديث'}
                                 {activeGeneralModal === 'advanced' && 'ضبط إعدادات متقدمة والمظهر'}
+                                {activeGeneralModal === 'database' && 'إعدادات قاعدة البيانات والمزامنة المتقدمة'}
                               </h3>
                               <button
                                 type="button"
@@ -1065,6 +1134,113 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                             </div>
                           </div>
 
+                        </div>
+                      </div>
+                    )}
+                    {activeGeneralModal === 'database' && (
+                      <div className="space-y-6 animate-in fade-in duration-200 text-right font-cairo">
+                        {/* Header Box */}
+                        <div className="p-5 bg-white/5 rounded-3xl border border-white/5 flex items-center justify-between">
+                          <div>
+                            <h3 className="font-bold text-white text-lg">مصدر البيانات وقاعدة البيانات</h3>
+                            <p className="text-xs text-gray-500 mt-1">
+                              اختر ما إذا كان التطبيق يستخدم قاعدة بيانات محلية، أو قاعدة بيانات سحابية (Firebase)، أو وضعاً تلقائياً وهجيناً يقوم بالتحويل تلقائياً عند انقطاع الإنترنت.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Mode selectors */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDbMode('LOCAL')}
+                            className={`p-6 rounded-3xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-3 cursor-pointer ${dbMode === 'LOCAL' ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl' : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'}`}
+                          >
+                            <HardDrive size={28} />
+                            <div className="text-center">
+                              <span className="block font-bold text-sm">إصدار محلي (LOCAL)</span>
+                              <span className="text-[10px] text-gray-500 block mt-1">تشغيل البيانات محلياً على الهاتف/المتصفح عبر SQLite</span>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDbMode('CLOUD')}
+                            className={`p-6 rounded-3xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-3 cursor-pointer ${dbMode === 'CLOUD' ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl' : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'}`}
+                          >
+                            <Globe size={28} />
+                            <div className="text-center">
+                              <span className="block font-bold text-sm">إصدار سحابي (CLOUD)</span>
+                              <span className="text-[10px] text-gray-500 block mt-1">تخزين البيانات مباشرة على السحابة (Firebase Firestore)</span>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDbMode('AUTO')}
+                            className={`p-6 rounded-3xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-3 cursor-pointer ${dbMode === 'AUTO' ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl' : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'}`}
+                          >
+                            <Cpu size={28} />
+                            <div className="text-center">
+                              <span className="block font-bold text-sm">وضع تلقائي وهجين (AUTO)</span>
+                              <span className="text-[10px] text-gray-500 block mt-1">استخدام السحابة عند توفر الإنترنت، والتبديل للمحلي عند انقطاعه</span>
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* Status Card */}
+                        <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                          <h4 className="font-bold text-white text-sm">الحالة والتشخيص الفعلي</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="p-4 bg-black/30 rounded-2xl border border-white/5 flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                <HardDrive size={18} />
+                              </div>
+                              <div>
+                                <span className="text-xs text-gray-500 block">مصدر البيانات النشط حالياً</span>
+                                <span className="text-sm font-bold text-white">
+                                  {activeProvider === 'CLOUD' ? 'السحابة (Firebase)' : 'قاعدة البيانات المحلية (SQLite)'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-4 bg-black/30 rounded-2xl border border-white/5 flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                <Globe size={18} />
+                              </div>
+                              <div>
+                                <span className="text-xs text-gray-500 block">حالة اتصال الشبكة</span>
+                                <span className={`text-sm font-bold ${navigator.onLine ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                  {navigator.onLine ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sync Card */}
+                        <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <h4 className="font-bold text-white text-sm">مزامنة البيانات السحابية والمحلية</h4>
+                              <p className="text-[10px] text-gray-500 mt-1">تزامن السجلات بين قاعدة البيانات المحلية والسحابة (ثنائي الاتجاه)</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSyncNow}
+                              disabled={syncLoading}
+                              className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md self-start sm:self-center"
+                            >
+                              {syncLoading ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                              مزامنة الآن
+                            </button>
+                          </div>
+
+                          {syncResult.type && (
+                            <div className={`p-4 rounded-xl text-xs font-bold border ${syncResult.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                              {syncResult.message}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

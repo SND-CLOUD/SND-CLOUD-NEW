@@ -1,0 +1,91 @@
+import { IDataProvider } from './IDataProvider';
+import { LocalProviderInstance } from './LocalProvider';
+import { FirebaseProviderInstance } from './FirebaseProvider';
+
+export type DatabaseMode = 'LOCAL' | 'CLOUD' | 'AUTO';
+
+export class ProviderFactory {
+  private static isInitialized = false;
+  private static networkListenerAttached = false;
+  private static isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+  static init() {
+    if (this.isInitialized) return;
+    this.isInitialized = true;
+
+    if (typeof window !== 'undefined' && !this.networkListenerAttached) {
+      this.networkListenerAttached = true;
+      window.addEventListener('online', async () => {
+        this.isOnline = true;
+        console.log('App connection changed: ONLINE. Running in cloud mode if AUTO is selected.');
+        if (this.getMode() === 'AUTO') {
+          try {
+            const { SyncEngine } = await import('./SyncEngine');
+            console.log('Starting background auto-sync...');
+            await SyncEngine.syncAll();
+          } catch (e) {
+            console.error('Failed to run background auto-sync:', e);
+          }
+        }
+      });
+      window.addEventListener('offline', () => {
+        this.isOnline = false;
+        console.log('App connection changed: OFFLINE. Running in local mode if AUTO is selected.');
+      });
+
+      // Trigger sync on startup if online and AUTO
+      if (this.isOnline && this.getMode() === 'AUTO') {
+        setTimeout(async () => {
+          try {
+            const { SyncEngine } = await import('./SyncEngine');
+            console.log('Starting startup auto-sync...');
+            await SyncEngine.syncAll();
+          } catch (e) {
+            console.error('Failed to run startup auto-sync:', e);
+          }
+        }, 3000);
+      }
+    }
+  }
+
+  static getMode(): DatabaseMode {
+    const stored = localStorage.getItem('snd_db_provider_mode');
+    if (stored === 'LOCAL' || stored === 'CLOUD' || stored === 'AUTO') {
+      return stored as DatabaseMode;
+    }
+    // Fallback to build-time environment variable if configured
+    const meta = import.meta as any;
+    const envMode = meta && meta.env ? meta.env.VITE_APP_MODE : undefined;
+    if (envMode === 'LOCAL' || envMode === 'CLOUD' || envMode === 'AUTO') {
+      return envMode as DatabaseMode;
+    }
+    return 'LOCAL'; // Default fallback
+  }
+
+  static setMode(mode: DatabaseMode) {
+    localStorage.setItem('snd_db_provider_mode', mode);
+    // Reload to apply database context cleanly
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  }
+
+  static getActiveProviderType(): 'LOCAL' | 'CLOUD' {
+    this.init();
+    const mode = this.getMode();
+    if (mode === 'LOCAL') return 'LOCAL';
+    if (mode === 'CLOUD') return 'CLOUD';
+    
+    // AUTO mode: check connection status
+    const online = typeof navigator !== 'undefined' ? navigator.onLine : this.isOnline;
+    return online ? 'CLOUD' : 'LOCAL';
+  }
+
+  static getProvider(): IDataProvider {
+    const type = this.getActiveProviderType();
+    if (type === 'CLOUD') {
+      return FirebaseProviderInstance;
+    }
+    return LocalProviderInstance;
+  }
+}
