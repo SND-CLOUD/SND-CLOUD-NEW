@@ -603,7 +603,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                     type="text" 
                     required
                     value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '') })}
                     className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-left font-mono"
                   />
                 </div>

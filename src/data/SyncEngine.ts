@@ -162,7 +162,15 @@ export class SyncEngine {
         'device_categories',
         'device_models',
         'approval_actions',
-        'settings'
+        'settings',
+        'users',
+        'engineers',
+        'inventory_items',
+        'fin_transaction_types',
+        'fin_funds',
+        'fin_currencies',
+        'fin_payment_methods',
+        'document_outputs'
       ];
 
       for (const table of tables) {

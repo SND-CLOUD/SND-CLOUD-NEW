@@ -45,6 +45,21 @@ export class ProviderFactory {
           }
         }, 3000);
       }
+
+      // Periodic background auto-sync every 30 seconds if AUTO mode is selected
+      setInterval(async () => {
+        if (this.getMode() === 'AUTO') {
+          try {
+            const { SyncEngine } = await import('./SyncEngine');
+            if (!SyncEngine.isSyncing()) {
+              console.log('Starting periodic background auto-sync...');
+              await SyncEngine.syncAll();
+            }
+          } catch (e) {
+            console.error('Failed to run periodic background auto-sync:', e);
+          }
+        }
+      }, 30000); // 30 seconds
     }
   }
 

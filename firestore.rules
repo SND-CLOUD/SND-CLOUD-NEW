@@ -91,6 +91,22 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /fin_transaction_types/{id} {
+      allow read, write: if true;
+    }
+
+    match /fin_funds/{id} {
+      allow read, write: if true;
+    }
+
+    match /fin_currencies/{id} {
+      allow read, write: if true;
+    }
+
+    match /fin_payment_methods/{id} {
+      allow read, write: if true;
+    }
+
     match /device_types/{id} {
       allow read, write: if true;
     }
