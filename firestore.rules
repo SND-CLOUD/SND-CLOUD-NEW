@@ -7,14 +7,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // --- Helpers ---
-    function isSignedIn() { return request.auth != null; }
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
-    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
-    
     // --- Validation Helpers ---
-
+    function incoming() { return request.resource.data; }
+    
     function isValidCustomer(data) {
       return (!data.keys().hasAll(['name']) || data.name is string) &&
              (!data.keys().hasAll(['phone1']) || data.phone1 is string);
@@ -22,9 +17,9 @@ service cloud.firestore {
 
     function isValidInvoice(data) {
       return (!data.keys().hasAll(['invoiceNumber']) || (data.invoiceNumber is string || data.invoiceNumber is number)) &&
-             (!data.keys().hasAll(['customerId']) || data.customerId is string) && 
-             (!data.keys().hasAll(['totalCost']) || data.totalCost is number) && 
-             (!data.keys().hasAll(['amountPaid']) || data.amountPaid is number) && 
+             (!data.keys().hasAll(['customerId']) || data.customerId is string) &&
+             (!data.keys().hasAll(['totalCost']) || data.totalCost is number) &&
+             (!data.keys().hasAll(['amountPaid']) || data.amountPaid is number) &&
              (!data.keys().hasAll(['status']) || (data.status is string && data.status.size() <= 32));
     }
 
@@ -51,105 +46,68 @@ service cloud.firestore {
     }
 
     // --- Matches ---
-
     match /customers/{customerId} {
-      allow read: if true;
-      allow create: if isValidCustomer(incoming());
-      allow update: if isValidCustomer(incoming());
-      allow delete: if true;
+      allow read, write: if true;
     }
-
     match /invoices/{invoiceId} {
-      allow read: if true;
-      allow create: if isValidInvoice(incoming());
-      allow update: if isValidInvoice(incoming());
-      allow delete: if true;
+      allow read, write: if true;
     }
-
     match /invoice_items/{itemId} {
-      allow read: if true;
-      allow create: if isValidInvoiceItem(incoming());
-      allow update: if isValidInvoiceItem(incoming());
-      allow delete: if true;
+      allow read, write: if true;
     }
-
     match /inventory_items/{itemId} {
-      allow read: if true;
-      allow create: if isValidInventory(incoming());
-      allow update: if isValidInventory(incoming());
-      allow delete: if true;
+      allow read, write: if true;
     }
-
     match /vault_transactions/{txId} {
-      allow read: if true;
-      allow create: if isValidVaultTransaction(incoming());
-      allow update: if isValidVaultTransaction(incoming());
-      allow delete: if true;
+      allow read, write: if true;
     }
-
     match /currencies/{id} {
       allow read, write: if true;
     }
-
     match /fin_transaction_types/{id} {
       allow read, write: if true;
     }
-
     match /fin_funds/{id} {
       allow read, write: if true;
     }
-
     match /fin_currencies/{id} {
       allow read, write: if true;
     }
-
     match /fin_payment_methods/{id} {
       allow read, write: if true;
     }
-
     match /device_types/{id} {
       allow read, write: if true;
     }
-
     match /device_categories/{id} {
       allow read, write: if true;
     }
-
     match /device_models/{id} {
       allow read, write: if true;
     }
-
     match /document_outputs/{id} {
       allow read, write: if true;
     }
-
     match /settings/{docId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
     }
-
     match /users/{userId} {
       allow read, write: if true;
     }
-
     match /engineers/{engineerId} {
       allow read, write: if true;
     }
-
     match /maintenance_actions/{actionId} {
       allow read, write: if true;
     }
-
     match /company_details/{docId} {
       allow read, write: if true;
     }
-
     match /approval_actions/{docId} {
       allow read, write: if true;
     }
-
     match /test/{docId} {
-      allow get: if true; // For connection testing
+      allow get: if true;
     }
   }
 }

@@ -7,6 +7,7 @@ import { Invoice, InvoiceItem, User } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, Search, Save, X, Info, HardDrive, User as UserIcon, ArrowLeft, ArrowRight, Phone, MapPin, Facebook, Smartphone, ChevronLeft, ChevronRight, SlidersHorizontal, MessageCircle, Wallet, Settings } from 'lucide-react';
 import { localDb } from '../../lib/local-db';
+import { ProviderFactory } from '../../data/ProviderFactory';
 import ReportActions from '../ReportActions';
 import PrintPreviewOverlay from '../PrintPreviewOverlay';
 import jsPDF from 'jspdf';

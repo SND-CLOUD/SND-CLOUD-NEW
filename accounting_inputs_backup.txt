@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ProviderFactory } from '../data/ProviderFactory';
+import { localDb } from '../lib/local-db';
 import { 
   Plus, 
   Edit2, 
@@ -118,15 +118,17 @@ export default function AccountingInputs() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const provider = ProviderFactory.getProvider();
-      const typesRes = await provider.getDocs('fin_transaction_types');
-      setTxTypes(typesRes.docs.map(d => d.data()) as FinTransactionType[]);
-      const fundsRes = await provider.getDocs('fin_funds');
-      setFunds(fundsRes.docs.map(d => d.data()) as FinFund[]);
-      const currRes = await provider.getDocs('fin_currencies');
-      setCurrencies(currRes.docs.map(d => d.data()) as FinCurrency[]);
-      const methRes = await provider.getDocs('fin_payment_methods');
-      setMethods(methRes.docs.map(d => d.data()) as FinPaymentMethod[]);
+      const typesRes = await localDb.query('SELECT * FROM fin_transaction_types');
+      setTxTypes((typesRes.values || []) as FinTransactionType[]);
+
+      const fundsRes = await localDb.query('SELECT * FROM fin_funds');
+      setFunds((fundsRes.values || []) as FinFund[]);
+
+      const currRes = await localDb.query('SELECT * FROM fin_currencies');
+      setCurrencies((currRes.values || []) as FinCurrency[]);
+
+      const methRes = await localDb.query('SELECT * FROM fin_payment_methods');
+      setMethods((methRes.values || []) as FinPaymentMethod[]);
     } catch (err: any) {
       setError(err?.message || 'خطأ في تحميل البيانات المالية');
     } finally {
@@ -153,12 +155,18 @@ export default function AccountingInputs() {
     try {
       if (typeForm.id) {
         // Edit
-        await ProviderFactory.getProvider().updateDoc('fin_transaction_types', typeForm.id, { name: typeForm.name.trim(), type: typeForm.type });
+        await localDb.run(
+          'UPDATE fin_transaction_types SET name = ?, type = ? WHERE id = ?',
+          [typeForm.name.trim(), typeForm.type, typeForm.id]
+        );
         triggerNotification('تم تحديث نوع العملية المالية بنجاح');
       } else {
         // Add
         const newId = `rec-${Math.random().toString(36).substring(2, 8)}`;
-        await ProviderFactory.getProvider().setDoc('fin_transaction_types', newId, { name: typeForm.name.trim(), type: typeForm.type });
+        await localDb.run(
+          'INSERT INTO fin_transaction_types (id, name, type) VALUES (?, ?, ?)',
+          [newId, typeForm.name.trim(), typeForm.type]
+        );
         triggerNotification('تم إضافة نوع العملية المالية بنجاح');
       }
       setTypeForm({ name: '', type: 'receipt' });
@@ -175,7 +183,7 @@ export default function AccountingInputs() {
   const handleDeleteType = async (id: string) => {
     if (deleteTypeConfirmId === id) {
       try {
-        await ProviderFactory.getProvider().deleteDoc('fin_transaction_types', id);
+        await localDb.run('DELETE FROM fin_transaction_types WHERE id = ?', [id]);
         triggerNotification('تم حذف البند بنجاح');
         setDeleteTypeConfirmId(null);
         loadAllData();
@@ -245,7 +253,10 @@ export default function AccountingInputs() {
   const handleToggleFundStatus = async (fund: FinFund) => {
     try {
       const newStatus = fund.status === 'active' ? 'suspended' : 'active';
-      await ProviderFactory.getProvider().updateDoc('fin_funds', fund.id, { status: newStatus });
+      await localDb.run(
+        'UPDATE fin_funds SET status = ? WHERE id = ?',
+        [newStatus, fund.id]
+      );
       triggerNotification(`تم ${newStatus === 'active' ? 'تفعيل' : 'إيقاف'} الصندوق بنجاح`);
       loadAllData();
     } catch (err: any) {
@@ -258,7 +269,10 @@ export default function AccountingInputs() {
   const handleDeleteFund = async (fund: FinFund) => {
     if (deleteConfirmId === fund.id) {
       try {
-        await ProviderFactory.getProvider().deleteDoc('fin_funds', fund.id);
+        await localDb.run(
+          'DELETE FROM fin_funds WHERE id = ?',
+          [fund.id]
+        );
         triggerNotification('تم حذف الصندوق بنجاح');
         setDeleteConfirmId(null);
         loadAllData();
@@ -278,11 +292,29 @@ export default function AccountingInputs() {
 
     try {
       if (currencyForm.id) {
-        await ProviderFactory.getProvider().updateDoc('fin_currencies', currencyForm.id, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
+        await localDb.run(
+          'UPDATE fin_currencies SET name = ?, symbol = ?, decimals = ?, status = ? WHERE id = ?',
+          [
+            currencyForm.name.trim(),
+            currencyForm.symbol.trim(),
+            Number(currencyForm.decimals),
+            currencyForm.status,
+            currencyForm.id
+          ]
+        );
         triggerNotification('تم تحديث العملة بنجاح');
       } else {
         const newId = currencyForm.symbol.trim().toUpperCase();
-        await ProviderFactory.getProvider().setDoc('fin_currencies', newId, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
+        await localDb.run(
+          'INSERT INTO fin_currencies (id, name, symbol, decimals, status) VALUES (?, ?, ?, ?, ?)',
+          [
+            newId,
+            currencyForm.name.trim(),
+            currencyForm.symbol.trim(),
+            Number(currencyForm.decimals),
+            currencyForm.status
+          ]
+        );
         triggerNotification('تم إضافة العملة بنجاح');
       }
       setCurrencyForm({
@@ -305,11 +337,27 @@ export default function AccountingInputs() {
 
     try {
       if (methodForm.id) {
-        await ProviderFactory.getProvider().updateDoc('fin_payment_methods', methodForm.id, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
+        await localDb.run(
+          'UPDATE fin_payment_methods SET name = ?, description = ?, status = ? WHERE id = ?',
+          [
+            methodForm.name.trim(),
+            methodForm.description.trim(),
+            methodForm.status,
+            methodForm.id
+          ]
+        );
         triggerNotification('تم تحديث طريقة الدفع بنجاح');
       } else {
         const newId = `pay-${Math.random().toString(36).substring(2, 8)}`;
-        await ProviderFactory.getProvider().setDoc('fin_payment_methods', newId, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
+        await localDb.run(
+          'INSERT INTO fin_payment_methods (id, name, description, status) VALUES (?, ?, ?, ?)',
+          [
+            newId,
+            methodForm.name.trim(),
+            methodForm.description.trim(),
+            methodForm.status
+          ]
+        );
         triggerNotification('تم إضافة طريقة الدفع الجديدة بنجاح');
       }
       setMethodForm({

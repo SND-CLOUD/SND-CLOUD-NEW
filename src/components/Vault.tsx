@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { localDb } from '../lib/local-db';
+import { ProviderFactory } from '../data/ProviderFactory';
 import { User, ShopConfig } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import BankAccountsFooter from './BankAccountsFooter';
@@ -728,49 +729,19 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
 
 
       // 1. Insert into database
-      await localDb.run(
-        `INSERT INTO vault_transactions (
-          id, currency, amount, customerName, invoiceNumber, 
-          userName, userNumber, userId, timestamp, type, 
-          notes, updatedAt, voucherNumber, transactionCategory, 
-          fundId, fundName, customerId, isReversed, isReversal, reversalOf,
-          paymentType, liabilityCurrency, liabilityAmount, receiptCurrency, receiptAmount, bankDetails
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, ?, ?)`,
-        [
-          txId,
-          selectedCurrency, // The currency of the voucher
-          isReceipt ? parsedAmount : -parsedAmount, // ledger value (receipt +, payment -)
-          customerSearch.trim() || 'جهة عامة أخرى',
-          '', // No invoice number for manual vouchers
-          user.name || 'المدير العام',
-          user.userNumber || 1,
-          user.id || 'none',
-          timestampIso,
-          isReceipt ? 'receipt' : 'payment',
-          matchedFund.type !== 'cash' 
-            ? `رقم المرجع: ${referenceNumber.trim()} | المودع: ${depositorName.trim()} | الملاحظات: ${finalVoucherNotes}` 
-            : finalVoucherNotes,
-          timestampIso,
-          nextVoucherNum,
-          selectedCategory,
-          matchedFund.id,
-          matchedFund.name,
-          selectedCustomerId || '',
-          finalPaymentType,
-          finalLiabilityCurrency,
-          finalLiabilityAmount,
-          selectedCurrency, // Receipt Currency
-          parsedAmount,     // Receipt Amount
-          matchedFund.type !== 'cash' ? JSON.stringify({ referenceNumber: referenceNumber.trim(), depositorName: depositorName.trim() }) : ''
-        ]
-      );
+      const txData1 = {
+        id: txId, currency: selectedCurrency, amount: isReceipt ? parsedAmount : -parsedAmount, customerName: customerSearch.trim() || 'جهة عامة أخرى', invoiceNumber: '',
+        userName: user.name || 'المدير العام', userNumber: user.userNumber || 1, userId: user.id || 'none', timestamp: timestampIso, type: isReceipt ? 'receipt' : 'payment',
+        notes: matchedFund.type !== 'cash' ? `رقم المرجع: ${referenceNumber.trim()} | المودع: ${depositorName.trim()} | الملاحظات: ${finalVoucherNotes}` : finalVoucherNotes,
+        updatedAt: timestampIso, voucherNumber: nextVoucherNum, transactionCategory: selectedCategory, fundId: matchedFund.id, fundName: matchedFund.name,
+        customerId: selectedCustomerId || '', isReversed: 0, isReversal: 0, reversalOf: '', paymentType: finalPaymentType, liabilityCurrency: finalLiabilityCurrency,
+        liabilityAmount: finalLiabilityAmount, receiptCurrency: finalReceiptCurrency, receiptAmount: finalReceiptAmount, bankDetails: JSON.stringify(finalBankDetails), statementNote: customerStatementNote
+      };
+      await ProviderFactory.getProvider().setDoc('vault_transactions', txId, txData1);
 
       // 2. Adjust target box fund balance in database
       const balanceAdjustment = isReceipt ? parsedAmount : -parsedAmount;
-      await localDb.run(
-        "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
-        [balanceAdjustment, matchedFund.id]
-      );
+      await ProviderFactory.getProvider().updateDoc('fin_funds', matchedFund.id, { balance: { type: 'increment', value: balanceAdjustment } });
 
       // Add to firestore
       await setDoc(doc(db, 'vault_transactions', txId), {
@@ -874,73 +845,16 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
 
       // Create transaction for Source (payment/outgoing)
       const txIdOut = `vtx-${Math.random().toString(36).substring(2, 8)}`;
-      await localDb.run(
-        `INSERT INTO vault_transactions (
-          id, currency, amount, customerName, invoiceNumber, 
-          userName, userNumber, userId, timestamp, type, 
-          notes, updatedAt, voucherNumber, transactionCategory, 
-          fundId, fundName, customerId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          txIdOut,
-          sourceFund.currency,
-          -parsedAmount, 
-          'تحويل داخلي',
-          '',
-          user.name || 'المدير العام',
-          user.userNumber || 1,
-          user.id || 'none',
-          timestampIso,
-          'payment',
-          `تحويل صادر إلى الصندوق: ${destFund.name}${finalTransferNotesSrc}`,
-          timestampIso,
-          nextVoucherNum, // Using current voucher num for linking
-          'تحويل بين الصناديق',
-          sourceFund.id,
-          sourceFund.name,
-          ''
-        ]
-      );
-
-      // Create transaction for Destination (receipt/incoming)
-      const txIdIn = `vtx-${Math.random().toString(36).substring(2, 8)}`;
-      await localDb.run(
-        `INSERT INTO vault_transactions (
-          id, currency, amount, customerName, invoiceNumber, 
-          userName, userNumber, userId, timestamp, type, 
-          notes, updatedAt, voucherNumber, transactionCategory, 
-          fundId, fundName, customerId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          txIdIn,
-          destFund.currency,
-          destAmount, 
-          'تحويل داخلي',
-          '',
-          user.name || 'المدير العام',
-          user.userNumber || 1,
-          user.id || 'none',
-          timestampIso,
-          'receipt',
-          `تحويل وارد من الصندوق: ${sourceFund.name}${finalTransferNotesDest}`,
-          timestampIso,
-          nextVoucherNum,
-          'تحويل بين الصناديق',
-          destFund.id,
-          destFund.name,
-          ''
-        ]
-      );
+      await ProviderFactory.getProvider().setDoc('vault_transactions', txIdOut, {
+          id: txIdOut, currency: sourceFund.currency, amount: -parsedAmount, customerName: 'تحويل داخلي', invoiceNumber: '',
+          userName: user.name || 'المدير العام', userNumber: user.userNumber || 1, userId: user.id || 'none', timestamp: timestampIso, type: 'payment',
+          notes: `تحويل صادر إلى الصندوق: ${destFund.name}${finalTransferNotesSrc}`, updatedAt: timestampIso, voucherNumber: nextVoucherNum, transactionCategory: 'تحويل بين الصناديق',
+          fundId: sourceFund.id, fundName: sourceFund.name, customerId: ''
+      });
 
       // Adjust balances
-      await localDb.run(
-        "UPDATE fin_funds SET balance = balance - ? WHERE id = ?",
-        [parsedAmount, sourceFund.id]
-      );
-      await localDb.run(
-        "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
-        [destAmount, destFund.id]
-      );
+      await ProviderFactory.getProvider().updateDoc('fin_funds', sourceFund.id, { balance: { type: 'increment', value: -parsedAmount } });
+      await ProviderFactory.getProvider().updateDoc('fin_funds', destFund.id, { balance: { type: 'increment', value: destAmount } });
 
       setSuccessMsg(`تم التحويل بنجاح من ${sourceFund.name} إلى ${destFund.name}`);
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -994,10 +908,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       const reversalNotes = `[قيد عكسي] للمستند رقم ${tx.voucherNumber} - ${originalVoucherNotes}`;
 
       // 1. Update original transaction in SQLite
-      await localDb.run(
-        "UPDATE vault_transactions SET isReversed = 1, notes = ?, updatedAt = ? WHERE id = ?",
-        [updatedOriginalNotes, timestampIso, tx.id]
-      );
+      await ProviderFactory.getProvider().updateDoc('vault_transactions', tx.id, { isReversed: 1, notes: updatedOriginalNotes, updatedAt: timestampIso });
 
       // 2. Insert reversal counter-transaction in SQLite
       await localDb.run(
@@ -1031,10 +942,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
 
       // 3. Update SQLite fund balance
       if (tx.fundId) {
-        await localDb.run(
-          "UPDATE fin_funds SET balance = balance + ? WHERE id = ?",
-          [reverseAmount, tx.fundId]
-        );
+        await ProviderFactory.getProvider().updateDoc('fin_funds', tx.fundId, { balance: { type: 'increment', value: reverseAmount } });
       }
 
       // 4. Update Firestore if the transaction can be found there (it has a customerId or matching id)
