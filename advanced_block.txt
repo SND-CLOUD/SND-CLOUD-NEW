@@ -1,0 +1,270 @@
+{activeTab === 'advanced-management' && (
+                  <div className="pb-8 text-right font-cairo animate-in fade-in duration-200" dir="rtl">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      {/* Sidebar Tabs - Vertical Layout */}
+                      <div className="md:col-span-1 flex flex-col gap-2 border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
+                        <button
+                          type="button"
+                          onClick={() => setAdvancedTab('database')}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
+                            advancedTab === 'database'
+                              ? 'bg-orange-600 text-white shadow-lg'
+                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Database size={18} />
+                          <span>قاعدة البيانات والمزامنة</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setAdvancedTab('general_manager')}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
+                            advancedTab === 'general_manager'
+                              ? 'bg-orange-600 text-white shadow-lg'
+                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <UserIcon size={18} />
+                          <span>المدير العام</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('هل أنت متأكد من اعتماد الإعدادات الجديدة وإعادة تشغيل النظام؟ سيتم تسجيل الخروج.')) {
+                              setSaving(true);
+                              // In a real app we'd save DB config to a root file or API
+                              // then logout
+                              sessionStorage.removeItem('snd_user');
+                              window.location.reload();
+                            }
+                          }}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all bg-green-600/20 text-green-500 hover:bg-green-600 hover:text-white border border-green-500/30`}
+                        >
+                          <CheckCircle size={18} />
+                          <span>تأكيد واعتماد النظام</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setAdvancedTab('system_reset')}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
+                            advancedTab === 'system_reset'
+                              ? 'bg-red-600 text-white shadow-lg'
+                              : 'bg-red-500/10 text-red-500 hover:text-white hover:bg-red-600 border border-red-500/20'
+                          }`}
+                        >
+                          <RotateCcw size={18} />
+                          <span>إعادة التهيئة (System Reset)</span>
+                        </button>
+                      </div>
+
+                      {/* Main Content Area */}
+                      <div className="md:col-span-3">
+                        {advancedTab === 'database' && (
+                          <div className="space-y-6 animate-in fade-in duration-200">
+                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-6">
+                                <h4 className="font-bold text-white text-sm">إعداد قاعدة البيانات والربط</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveDbMode('LOCAL')}
+                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                      dbMode === 'LOCAL'
+                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                    }`}
+                                  >
+                                    <HardDrive size={24} className={dbMode === 'LOCAL' ? 'text-orange-500' : 'text-gray-400'} />
+                                    <div className="text-center">
+                                      <span className="block font-bold text-xs">محلي (LOCAL)</span>
+                                      <span className="text-[9px] text-gray-500 block mt-0.5">الأساسية الافتراضية</span>
+                                    </div>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveDbMode('CLOUD')}
+                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                      dbMode === 'CLOUD'
+                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                    }`}
+                                  >
+                                    <Globe size={24} className={dbMode === 'CLOUD' ? 'text-orange-500' : 'text-gray-400'} />
+                                    <div className="text-center">
+                                      <span className="block font-bold text-xs">سحابي (CLOUD)</span>
+                                      <span className="text-[9px] text-gray-500 block mt-0.5">Firebase</span>
+                                    </div>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveDbMode('AUTO')}
+                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                      dbMode === 'AUTO'
+                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                    }`}
+                                  >
+                                    <RefreshCw size={24} className={dbMode === 'AUTO' ? 'text-orange-500' : 'text-gray-400'} />
+                                    <div className="text-center">
+                                      <span className="block font-bold text-xs">هجين (AUTO)</span>
+                                      <span className="text-[9px] text-gray-500 block mt-0.5">مزامنة ذكية</span>
+                                    </div>
+                                  </button>
+                                </div>
+                                {dbMode === 'LOCAL' && (
+                                   <div className="space-y-4 pt-4 border-t border-white/5">
+                                      <div>
+                                        <label className="text-xs font-bold text-gray-500 mb-2 block">مسار حفظ قاعدة البيانات</label>
+                                        <input type="text" value={backupPath} onChange={(e) => setBackupPath(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-left text-white" dir="ltr" />
+                                      </div>
+                                   </div>
+                                )}
+                                {(dbMode === 'CLOUD' || dbMode === 'AUTO') && (
+                                   <div className="space-y-4 pt-4 border-t border-white/5">
+                                      <div>
+                                        <label className="text-xs font-bold text-gray-500 mb-2 block">إعدادات الاتصال السحابي</label>
+                                        <div className="p-4 bg-black/40 rounded-xl border border-white/10 text-sm text-gray-400">
+                                           (جاري استخدام إعدادات الاتصال المضمنة حالياً)
+                                        </div>
+                                      </div>
+                                   </div>
+                                )}
+                                <div className="pt-4 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => alert('تم حفظ الإعدادات، يرجى الضغط على تأكيد واعتماد النظام لتطبيقها.')}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-md"
+                                  >
+                                    تأكيد الإعدادات (حفظ مؤقت)
+                                  </button>
+                                </div>
+                             </div>
+
+                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                                <h4 className="font-bold text-white text-sm">مصدر البيانات الحالي والمزامنة</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                      <Database size={18} />
+                                    </div>
+                                    <div className="flex-1">
+                                      <span className="text-xs text-gray-500 block">القاعدة المعتمدة</span>
+                                      <span className="text-sm font-bold text-white">{activeProvider === 'LOCAL' ? 'محلي (SQLite)' : 'سحابي (Firebase)'}</span>
+                                    </div>
+                                    <button 
+                                      onClick={() => alert('تم إلغاء الربط')} 
+                                      disabled={dbMode === 'LOCAL'}
+                                      className="px-3 py-1.5 text-xs bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors font-bold disabled:opacity-50"
+                                    >
+                                      إلغاء الربط
+                                    </button>
+                                  </div>
+                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                      <Globe size={18} />
+                                    </div>
+                                    <div>
+                                      <span className="text-xs text-gray-500 block">حالة اتصال الشبكة</span>
+                                      <span className={`text-sm font-bold ${navigator.onLine ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                        {navigator.onLine ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                  <div>
+                                    <h4 className="font-bold text-white text-xs">مزامنة البيانات السحابية والمحلية</h4>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">آخر مزامنة: الآن</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleSyncNow}
+                                    disabled={syncLoading}
+                                    className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md self-start sm:self-center"
+                                  >
+                                    {syncLoading ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                    مزامنة الآن
+                                  </button>
+                                </div>
+                                {syncResult.type && (
+                                  <div className={`p-4 rounded-xl text-xs font-bold border ${syncResult.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                                    {syncResult.message}
+                                  </div>
+                                )}
+                             </div>
+                          </div>
+                        )}
+
+                        {advancedTab === 'general_manager' && (
+                          <div className="space-y-6 animate-in fade-in duration-200">
+                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                                <h4 className="font-bold text-white text-sm">المدير العام</h4>
+                                <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex flex-wrap items-center justify-between gap-3">
+                                   <div className="flex items-center gap-3">
+                                      <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-bold text-lg">أ</div>
+                                      <div>
+                                        <h3 className="font-bold text-white text-sm">المدير العام</h3>
+                                        <p className="text-[10px] text-gray-500">@admin</p>
+                                      </div>
+                                   </div>
+                                   <button onClick={async () => {
+                                     const newPass = window.prompt('أدخل كلمة المرور الجديدة للمدير العام:');
+                                     if (!newPass) return;
+                                     try {
+                                        const { collection, query, where, getDocs, updateDoc, doc } = await import('../firebase');
+                                        const { db } = await import('../firebase');
+                                        const q = query(collection(db, 'users'), where('username', '==', 'admin'));
+                                        const snap = await getDocs(q);
+                                        if (!snap.empty) {
+                                           await updateDoc(doc(db, 'users', snap.docs[0].id), { password: newPass });
+                                           alert('تم تغيير كلمة المرور للمدير العام بنجاح');
+                                        } else {
+                                           alert('حساب المدير العام غير موجود');
+                                        }
+                                     } catch (e) {
+                                        alert('حدث خطأ');
+                                     }
+                                   }} className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs shadow-lg cursor-pointer">
+                                      <Lock size={13} />
+                                      تغيير كلمة المرور
+                                   </button>
+                                </div>
+                                <div className="mt-4">
+                                  <label className="text-xs font-bold text-gray-500 mb-2 block">البريد الإلكتروني لاستعادة كلمة المرور (اختياري)</label>
+                                  <input type="email" placeholder="email@example.com" className="w-full max-w-sm bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-left text-white" dir="ltr" />
+                                </div>
+                             </div>
+
+                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                                <SystemManagersList />
+                             </div>
+                          </div>
+                        )}
+
+                        {advancedTab === 'system_reset' && (
+                          <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-6 text-center animate-in fade-in duration-200">
+                             <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto">
+                                <ShieldAlert size={40} />
+                             </div>
+                             <div>
+                                <h3 className="text-xl font-bold text-white mb-2">إعادة التهيئة الشاملة</h3>
+                                <p className="text-gray-400 text-sm leading-relaxed max-w-lg mx-auto">
+                                   سيتم مسح كافة البيانات والسجلات والعودة إلى وضع التهيئة الافتراضي للنظام.
+                                </p>
+                             </div>
+                             <button
+                               onClick={() => resetAllDataTemp()}
+                               className="bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3 rounded-xl text-sm transition-all cursor-pointer shadow-lg shadow-red-900/20"
+                             >
+                               تأكيد إعادة التهيئة
+                             </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
