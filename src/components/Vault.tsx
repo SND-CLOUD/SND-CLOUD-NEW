@@ -721,6 +721,9 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
       const finalLiabilityCurrency = liabilityCurrency || selectedCurrency;
       const finalLiabilityAmount = computedLiabilityAmount;
       const finalPaymentType = (liabilityCurrency && liabilityCurrency !== selectedCurrency) ? 2 : 1;
+      const finalReceiptCurrency = selectedCurrency;
+      const finalReceiptAmount = parsedAmount;
+      const finalBankDetails = matchedFund.type !== 'cash' ? { referenceNumber: referenceNumber.trim(), depositorName: depositorName.trim() } : {};
 
       // Ensure statementNote column exists (hot-reload safety)
       try {

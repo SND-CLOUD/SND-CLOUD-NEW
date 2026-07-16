@@ -1,0 +1,24 @@
+{
+  "project_info": {
+    "project_number": "213721609069",
+    "project_id": "web-app-8a8dd",
+    "storage_bucket": "web-app-8a8dd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:213721609069:android:43c9c5525d5b8730b92064",
+        "android_client_info": {
+          "package_name": "com.snd.maintenance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0Je37IQ3WJOWoW2swxbVeG2jKuW_3sqA"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

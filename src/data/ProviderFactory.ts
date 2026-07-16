@@ -74,7 +74,7 @@ export class ProviderFactory {
     if (envMode === 'LOCAL' || envMode === 'CLOUD' || envMode === 'AUTO') {
       return envMode as DatabaseMode;
     }
-    return 'LOCAL'; // Default fallback
+    return 'AUTO'; // Default fallback
   }
 
   static setMode(mode: DatabaseMode) {

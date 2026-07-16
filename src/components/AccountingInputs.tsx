@@ -196,35 +196,28 @@ export default function AccountingInputs() {
     try {
       if (fundForm.id) {
         // Edit path
-        await localDb.run(
-          'UPDATE fin_funds SET name = ?, type = ?, currency = ?, description = ?, status = ?, bankAccount = ? WHERE id = ?',
-          [
-            fundForm.name.trim(),
-            fundForm.type,
-            fundForm.currency,
-            fundForm.description.trim(),
-            fundForm.status,
-            fundForm.type === 'bank' ? fundForm.bankAccount?.trim() : '',
-            fundForm.id
-          ]
-        );
+        await ProviderFactory.getProvider().updateDoc('fin_funds', fundForm.id, {
+          name: fundForm.name.trim(),
+          type: fundForm.type,
+          currency: fundForm.currency,
+          description: fundForm.description.trim(),
+          status: fundForm.status,
+          bankAccount: fundForm.type === 'bank' ? fundForm.bankAccount?.trim() : ''
+        });
         triggerNotification('تم تحديث الصندوق بنجاح');
       } else {
         // Add path
         const newId = `fund-${Math.random().toString(36).substring(2, 8)}`;
-        await localDb.run(
-          'INSERT INTO fin_funds (id, name, type, currency, description, status, balance, bankAccount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            newId,
-            fundForm.name.trim(),
-            fundForm.type,
-            fundForm.currency,
-            fundForm.description.trim(),
-            fundForm.status,
-            0.0, // Default balance
-            fundForm.type === 'bank' ? fundForm.bankAccount?.trim() : ''
-          ]
-        );
+        await ProviderFactory.getProvider().setDoc('fin_funds', newId, {
+          id: newId,
+          name: fundForm.name.trim(),
+          type: fundForm.type,
+          currency: fundForm.currency,
+          description: fundForm.description.trim(),
+          status: fundForm.status,
+          balance: 0.0, // Default balance
+          bankAccount: fundForm.type === 'bank' ? fundForm.bankAccount?.trim() : ''
+        });
         triggerNotification('تم إضافة الصندوق الجديد بنجاح');
       }
       setFundForm({
