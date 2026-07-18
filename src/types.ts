@@ -116,7 +116,7 @@ export interface User {
   username: string;
   password?: string;
   name: string;
-  role: 'admin' | 'system_manager' | 'manager' | 'data_entry';
+  role: 'admin' | 'manager' | 'data_entry';
   isPrimary?: boolean;
   isActive?: boolean;
   permissions?: AppPermissions;

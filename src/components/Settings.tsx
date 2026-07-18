@@ -4,7 +4,6 @@ import { doc, getDoc, setDoc, collection, getDocs, writeBatch, updateDoc, delete
 import { Save, RefreshCw, Smartphone, Database, Languages, LogOut, Shield, Fingerprint, Lock, Clock, HardDrive, Download, Archive, Upload, RotateCcw, FileText, User as UserIcon, Tag, X, Cpu, Calculator, ArrowLeft, ArrowRight, Edit, Phone, Mail, Facebook, MapPin, Store, ChevronLeft, Globe, Settings as SettingsIcon, CheckCircle, XCircle } from 'lucide-react';
 import { localDb } from '../lib/local-db';
 import { User, ShopConfig } from '../types';
-import SystemManagersList from './SystemManagersList';
 import UserManagement from './UserManagement';
 import EngineersTable from './EngineersTable';
 import CategoriesTable from './CategoriesTable';
@@ -23,8 +22,6 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   const { hasPermission } = usePermissions(user);
 
   const canShowCategory = (catId: string) => {
-    if (catId === 'advanced-management') return user.name === 'المدير العام' || user.username === 'admin' || user.id === 'primary-admin';
-    if (catId === 'management') return true;
     if (catId === 'general' || catId === 'security') return true;
     if (catId === 'accounting-inputs') return hasPermission('settings_main_data', 'view');
     if (catId === 'categories-engineers') return hasPermission('settings_devices_engineers', 'view');
@@ -36,11 +33,10 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   const [invoiceCounter, setInvoiceCounter] = useState(0);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<{ active: boolean; value: number; label: string }>({ active: false, value: 0, label: '' });
-  const [activeTab, setActiveTab ] = useState<'main' | 'general' | 'security' | 'backup' | 'users' | 'categories-engineers' | 'device-management' | 'accounting-inputs' | 'advanced-management' | 'management'>('main');
+  const [activeTab, setActiveTab ] = useState<'main' | 'general' | 'security' | 'backup' | 'users' | 'categories-engineers' | 'device-management' | 'accounting-inputs' | 'advanced-management'>('main');
   const [backupSubTab, setBackupSubTab] = useState<'list' | 'stats' | 'backup_manual' | 'export' | 'import' | 'archive' | 'reset' | 'audit'>('list');
   const [advancedDbView, setAdvancedDbView] = useState<'list' | 'stats' | 'backup_manual' | 'export' | 'import' | 'archive' | 'reset' | 'audit'>('list');
-  const [advancedTab, setAdvancedTab] = useState<'database' | 'devices' | 'general_manager' | 'system_reset' | 'confirm_system'>('database');
-  const [managementTab, setManagementTab] = useState<'database_read' | 'backup' | 'devices'>('database_read');
+  const [advancedTab, setAdvancedTab] = useState<'database' | 'devices'>('database');
   const [advancedDbSubTab, setAdvancedDbSubTab] = useState<'sync' | 'backup'>('sync');
   const [backupLoading, setBackupLoading] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -49,9 +45,6 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   // Shop details states
   const [activeCategoriesEngineersModal, setActiveCategoriesEngineersModal] = useState<'categories' | 'engineers' | null>(null);
   const [activeAccountingInputsModal, setActiveAccountingInputsModal] = useState<'accounting' | 'details' | 'backup' | null>(null);
-  const [activeAdvancedModal, setActiveAdvancedModal] = useState<'database' | 'devices' | 'general_manager' | 'system_reset' | 'confirm_system' | null>(null);
-  const [activeManagementModal, setActiveManagementModal] = useState<'database_read' | 'backup' | 'devices' | null>(null);
-
   const [generalSubTab, setGeneralSubTab] = useState<'language' | 'details' | 'advanced' | 'database'>('language');
   const [activeGeneralModal, setActiveGeneralModal] = useState<'language' | 'details' | 'advanced' | 'database' | null>(null);
   
@@ -146,7 +139,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   };
 
   useEffect(() => {
-    (window as any).isSettingsDeepView = activeTab !== 'main' || activeGeneralModal !== null || activeCategoriesEngineersModal !== null || activeAccountingInputsModal !== null || activeAdvancedModal !== null || activeManagementModal !== null;
+    (window as any).isSettingsDeepView = activeTab !== 'main' || activeGeneralModal !== null || activeCategoriesEngineersModal !== null || activeAccountingInputsModal !== null;
     const handleCloseDeepView = () => {
       if (activeGeneralModal !== null) {
         setActiveGeneralModal(null);
@@ -154,7 +147,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         setActiveCategoriesEngineersModal(null);
       } else if (activeAccountingInputsModal !== null) {
         setActiveAccountingInputsModal(null);
-      } else if (activeAdvancedModal !== null) { setActiveAdvancedModal(null); } else if (activeManagementModal !== null) { setActiveManagementModal(null); } else {
+      } else {
         setActiveTab('main');
       }
     };
@@ -858,12 +851,12 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
 
   const categories = [
     { id: 'general', title: t('settings.general'), icon: RefreshCw, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { id: 'advanced-management', title: 'إدارة متقدمة', icon: SettingsIcon, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-    { id: 'management', title: 'إدارة', icon: Database, color: 'text-blue-500', bg: 'bg-blue-500/10' },
     { id: 'accounting-inputs', title: 'مدخلات البيانات الرئيسية', icon: Calculator, color: 'text-amber-500', bg: 'bg-amber-500/10' },
     { id: 'categories-engineers', title: 'تصنيفات الأجهزة والمهندسين', icon: Cpu, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { id: 'device-management', title: 'إدارة الأجهزة', icon: Cpu, color: 'text-rose-500', bg: 'bg-rose-500/10' },
     { id: 'users', title: t('settings.users'), icon: Smartphone, color: 'text-purple-500', bg: 'bg-purple-500/10' },
     { id: 'security', title: t('settings.security'), icon: Shield, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+    { id: 'advanced-management', title: 'إدارة متقدمة', icon: SettingsIcon, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
   ];
 
   return (
@@ -954,7 +947,6 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                       {activeTab === 'categories-engineers' && 'تصنيفات الأجهزة والمهندسين'}
                       {activeTab === 'device-management' && 'إدارة الأجهزة'}
                       {activeTab === 'advanced-management' && 'إدارة متقدمة'}
-                      {activeTab === 'management' && 'إدارة'}
                     </h1>
                   </div>
                 </div>
@@ -2548,471 +2540,648 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                   </div>
                 )}
 
-                
                 {activeTab === 'advanced-management' && (
-                  <div className="space-y-6 pb-8 text-right font-cairo" dir="rtl">
-                    <div className="grid grid-cols-1 gap-4 max-w-2xl mx-auto pt-4">
-                      <button type="button" onClick={() => { setAdvancedTab('database'); setActiveAdvancedModal('database'); }} className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
-                            <Database size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">قاعدة البيانات والمزامنة</h3>
-                            <p className="text-xs text-gray-400 mt-1">إعدادات قاعدة البيانات والربط</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
+                  <div className="pb-8 text-right font-cairo animate-in fade-in duration-200" dir="rtl">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      {/* Sidebar Tabs - Vertical Layout */}
+                      <div className="md:col-span-1 flex flex-col gap-2 border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdvancedTab('database');
+                            setAdvancedDbView('list');
+                          }}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
+                            advancedTab === 'database'
+                              ? 'bg-orange-600 text-white shadow-lg'
+                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Database size={18} />
+                          <span>إدارة قاعدة البيانات</span>
+                        </button>
 
-                      <button type="button" onClick={() => { setAdvancedTab('general_manager'); setActiveAdvancedModal('general_manager'); }} className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
-                            <UserIcon size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">المدير العام</h3>
-                            <p className="text-xs text-gray-400 mt-1">إعدادات المدير العام للصيانة</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdvancedTab('devices')}
+                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
+                            advancedTab === 'devices'
+                              ? 'bg-orange-600 text-white shadow-lg'
+                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <Cpu size={18} />
+                          <span>إدارة الأجهزة</span>
+                        </button>
+                      </div>
 
-                      <button type="button" onClick={() => {
-                            if (window.confirm('هل أنت متأكد من اعتماد الإعدادات الجديدة وإعادة تشغيل النظام؟ سيتم تسجيل الخروج.')) {
-                              setSaving(true);
-                              sessionStorage.removeItem('snd_user');
-                              window.location.reload();
-                            }
-                          }} className="w-full flex items-center justify-between p-6 bg-green-600/10 hover:bg-green-600/20 border border-green-500/30 hover:border-green-500/50 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-green-600/20 text-green-500 flex items-center justify-center group-hover:bg-green-600 group-hover:text-white transition-all">
-                            <CheckCircle size={22} />
+                      {/* Main Content Area */}
+                      <div className="md:col-span-3">
+                        {advancedTab === 'devices' ? (
+                          <div className="animate-in fade-in duration-200">
+                            <DeviceManagement user={user} onBack={() => setAdvancedTab('database')} shopConfig={shopConfig} />
                           </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">تأكيد واعتماد النظام</h3>
-                            <p className="text-xs text-gray-400 mt-1">حفظ الإعدادات وإعادة تشغيل النظام</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
-
-                      <button type="button" onClick={() => { setAdvancedTab('system_reset'); setActiveAdvancedModal('system_reset'); }} className="w-full flex items-center justify-between p-6 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 hover:border-red-500/50 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-red-600/20 text-red-500 flex items-center justify-center group-hover:bg-red-600 group-hover:text-white transition-all">
-                            <RotateCcw size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-red-500 text-base">إعادة التهيئة (System Reset)</h3>
-                            <p className="text-xs text-red-400/70 mt-1">مسح جميع البيانات وإعادة النظام لحالة المصنع</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-red-500 group-hover:translate-x-[-4px] transition-all" />
-                      </button>
-                    </div>
-
-                    <AnimatePresence>
-                      {activeAdvancedModal !== null && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-sm">
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-[#1a1a1a] w-full h-full sm:h-[85vh] max-w-4xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-white/10"
-                          >
-                            <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20 sticky top-0 z-10 backdrop-blur-md">
-                              <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                                {activeAdvancedModal === 'database' && <Database className="text-orange-500" size={20} />}
-                                {activeAdvancedModal === 'general_manager' && <UserIcon className="text-orange-500" size={20} />}
-                                {activeAdvancedModal === 'system_reset' && <RotateCcw className="text-red-500" size={20} />}
-                                {activeAdvancedModal === 'database' && 'قاعدة البيانات والمزامنة'}
-                                {activeAdvancedModal === 'general_manager' && 'المدير العام'}
-                                {activeAdvancedModal === 'system_reset' && 'إعادة التهيئة'}
-                              </h3>
+                        ) : (
+                          // Database Management Section with Vertical Subtabs
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            {/* Inner Sidebar for Database Management - Vertical Layout */}
+                            <div className="md:col-span-1 flex flex-col gap-2 border-b md:border-b-0 md:border-l border-white/5 pb-4 md:pb-0 md:pl-4">
                               <button
                                 type="button"
-                                onClick={() => setActiveAdvancedModal(null)}
-                                className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white cursor-pointer"
+                                onClick={() => {
+                                  setAdvancedDbSubTab('sync');
+                                  setAdvancedDbView('list');
+                                }}
+                                className={`w-full px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                                  advancedDbSubTab === 'sync'
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md font-black'
+                                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                                }`}
                               >
-                                <X size={24} />
+                                <RefreshCw size={14} />
+                                <span>قاعدة البيانات والمزامنة</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdvancedDbSubTab('backup');
+                                  setAdvancedDbView('list');
+                                }}
+                                className={`w-full px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                                  advancedDbSubTab === 'backup'
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md font-black'
+                                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                                }`}
+                              >
+                                <Database size={14} />
+                                <span>نسخ البيانات والمزامنة</span>
                               </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar relative">
-                              {activeAdvancedModal === 'database' && (
-                          <div className="space-y-6 animate-in fade-in duration-200">
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-6">
-                                <h4 className="font-bold text-white text-sm">إعداد قاعدة البيانات والربط</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveDbMode('LOCAL')}
-                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                                      dbMode === 'LOCAL'
-                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
-                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
-                                    }`}
-                                  >
-                                    <HardDrive size={24} className={dbMode === 'LOCAL' ? 'text-orange-500' : 'text-gray-400'} />
-                                    <div className="text-center">
-                                      <span className="block font-bold text-xs">محلي (LOCAL)</span>
-                                      <span className="text-[9px] text-gray-500 block mt-0.5">الأساسية الافتراضية</span>
-                                    </div>
-                                  </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveDbMode('CLOUD')}
-                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                                      dbMode === 'CLOUD'
-                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
-                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
-                                    }`}
-                                  >
-                                    <Globe size={24} className={dbMode === 'CLOUD' ? 'text-orange-500' : 'text-gray-400'} />
-                                    <div className="text-center">
-                                      <span className="block font-bold text-xs">سحابي (CLOUD)</span>
-                                      <span className="text-[9px] text-gray-500 block mt-0.5">Firebase</span>
-                                    </div>
-                                  </button>
+                            {/* Inner Content Area */}
+                            <div className="md:col-span-3">
+                              {advancedDbView === 'list' ? (
+                                <div className="space-y-6">
+                                  {advancedDbSubTab === 'sync' ? (
+                                    <div className="space-y-6 animate-in fade-in duration-200">
+                            {/* Three Database Mode Selector Boxes at the Very Top */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveDbMode('LOCAL')}
+                                className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                  dbMode === 'LOCAL'
+                                    ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                    : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                }`}
+                              >
+                                <HardDrive size={24} className={dbMode === 'LOCAL' ? 'text-orange-500' : 'text-gray-400'} />
+                                <div className="text-center">
+                                  <span className="block font-bold text-xs">إصدار محلي (LOCAL)</span>
+                                  <span className="text-[9px] text-gray-500 block mt-0.5">SQLite على الجهاز</span>
+                                </div>
+                              </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveDbMode('AUTO')}
-                                    className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                                      dbMode === 'AUTO'
-                                        ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
-                                        : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
-                                    }`}
-                                  >
-                                    <RefreshCw size={24} className={dbMode === 'AUTO' ? 'text-orange-500' : 'text-gray-400'} />
-                                    <div className="text-center">
-                                      <span className="block font-bold text-xs">هجين (AUTO)</span>
-                                      <span className="text-[9px] text-gray-500 block mt-0.5">مزامنة ذكية</span>
-                                    </div>
-                                  </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveDbMode('CLOUD')}
+                                className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                  dbMode === 'CLOUD'
+                                    ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                    : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                }`}
+                              >
+                                <Globe size={24} className={dbMode === 'CLOUD' ? 'text-orange-500' : 'text-gray-400'} />
+                                <div className="text-center">
+                                  <span className="block font-bold text-xs">إصدار سحابي (CLOUD)</span>
+                                  <span className="text-[9px] text-gray-500 block mt-0.5">Firebase Firestore</span>
                                 </div>
-                                {dbMode === 'LOCAL' && (
-                                   <div className="space-y-4 pt-4 border-t border-white/5">
-                                      <div>
-                                        <label className="text-xs font-bold text-gray-500 mb-2 block">مسار حفظ قاعدة البيانات</label>
-                                        <input type="text" value={backupPath} onChange={(e) => setBackupPath(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-left text-white" dir="ltr" />
-                                      </div>
-                                   </div>
-                                )}
-                                {(dbMode === 'CLOUD' || dbMode === 'AUTO') && (
-                                   <div className="space-y-4 pt-4 border-t border-white/5">
-                                      <div>
-                                        <label className="text-xs font-bold text-gray-500 mb-2 block">إعدادات الاتصال السحابي</label>
-                                        <div className="p-4 bg-black/40 rounded-xl border border-white/10 text-sm text-gray-400">
-                                           (جاري استخدام إعدادات الاتصال المضمنة حالياً)
-                                        </div>
-                                      </div>
-                                   </div>
-                                )}
-                                <div className="pt-4 flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => alert('تم حفظ الإعدادات، يرجى الضغط على تأكيد واعتماد النظام لتطبيقها.')}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-md"
-                                  >
-                                    تأكيد الإعدادات (حفظ مؤقت)
-                                  </button>
-                                </div>
-                             </div>
+                              </button>
 
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
-                                <h4 className="font-bold text-white text-sm">مصدر البيانات الحالي والمزامنة</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
-                                      <Database size={18} />
-                                    </div>
-                                    <div className="flex-1">
-                                      <span className="text-xs text-gray-500 block">القاعدة المعتمدة</span>
-                                      <span className="text-sm font-bold text-white">{activeProvider === 'LOCAL' ? 'محلي (SQLite)' : 'سحابي (Firebase)'}</span>
-                                    </div>
-                                    <button 
-                                      onClick={() => alert('تم إلغاء الربط')} 
-                                      disabled={dbMode === 'LOCAL'}
-                                      className="px-3 py-1.5 text-xs bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors font-bold disabled:opacity-50"
-                                    >
-                                      إلغاء الربط
-                                    </button>
-                                  </div>
-                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
-                                      <Globe size={18} />
-                                    </div>
-                                    <div>
-                                      <span className="text-xs text-gray-500 block">حالة اتصال الشبكة</span>
-                                      <span className={`text-sm font-bold ${navigator.onLine ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                        {navigator.onLine ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}
-                                      </span>
-                                    </div>
-                                  </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveDbMode('AUTO')}
+                                className={`p-5 rounded-2xl border-2 font-bold transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${
+                                  dbMode === 'AUTO'
+                                    ? 'bg-orange-600/10 border-orange-600 text-orange-500 shadow-xl'
+                                    : 'bg-black/20 border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                                }`}
+                              >
+                                <Cpu size={24} className={dbMode === 'AUTO' ? 'text-orange-500' : 'text-gray-400'} />
+                                <div className="text-center">
+                                  <span className="block font-bold text-xs">وضع هجين (AUTO)</span>
+                                  <span className="text-[9px] text-gray-500 block mt-0.5">تحويل سحابي/محلي تلقائي</span>
                                 </div>
-                                <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                  <div>
-                                    <h4 className="font-bold text-white text-xs">مزامنة البيانات السحابية والمحلية</h4>
-                                    <p className="text-[10px] text-gray-500 mt-0.5">آخر مزامنة: الآن</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={handleSyncNow}
-                                    disabled={syncLoading}
-                                    className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md self-start sm:self-center"
-                                  >
-                                    {syncLoading ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                                    مزامنة الآن
-                                  </button>
-                                </div>
-                                {syncResult.type && (
-                                  <div className={`p-4 rounded-xl text-xs font-bold border ${syncResult.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                                    {syncResult.message}
-                                  </div>
-                                )}
-                             </div>
+                              </button>
+                            </div>
+
+                        {/* 2. Status & Sync */}
+                        <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                          <h4 className="font-bold text-white text-sm">الحالة والتشخيص الفعلي والمزامنة</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="p-4 bg-black/30 rounded-2xl border border-white/5 flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                <HardDrive size={18} />
+                              </div>
+                              <div>
+                                <span className="text-xs text-gray-500 block">مصدر البيانات النشط حالياً</span>
+                                <span className="text-sm font-bold text-white">
+                                  {activeProvider === 'CLOUD' ? 'السحابة (Firebase)' : 'قاعدة البيانات المحلية (SQLite)'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-4 bg-black/30 rounded-2xl border border-white/5 flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-orange-600/10 text-orange-500">
+                                <Globe size={18} />
+                              </div>
+                              <div>
+                                <span className="text-xs text-gray-500 block">حالة اتصال الشبكة</span>
+                                <span className={`text-sm font-bold ${navigator.onLine ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                  {navigator.onLine ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        
-                              )}
-                              {activeAdvancedModal === 'general_manager' && (
+
+                          <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <h4 className="font-bold text-white text-xs">مزامنة البيانات السحابية والمحلية</h4>
+                              <p className="text-[10px] text-gray-500 mt-0.5">تزامن السجلات بين قاعدة البيانات المحلية والسحابة (ثنائي الاتجاه)</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSyncNow}
+                              disabled={syncLoading}
+                              className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md self-start sm:self-center"
+                            >
+                              {syncLoading ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                              مزامنة الآن
+                            </button>
+                          </div>
+
+                          {syncResult.type && (
+                            <div className={`p-4 rounded-xl text-xs font-bold border ${syncResult.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
+                              {syncResult.message}
+                            </div>
+                          )}
+                        </div>
+                        </div>
+                        ) : (
                           <div className="space-y-6 animate-in fade-in duration-200">
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
-                                <h4 className="font-bold text-white text-sm">المدير العام</h4>
-                                <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex flex-wrap items-center justify-between gap-3">
-                                   <div className="flex items-center gap-3">
-                                      <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center font-bold text-lg">أ</div>
-                                      <div>
-                                        <h3 className="font-bold text-white text-sm">المدير العام</h3>
-                                        <p className="text-[10px] text-gray-500">@admin</p>
+                            {/* 3. Maintenance Tools Grid */}
+                            <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+                          <h4 className="font-bold text-white text-sm">أدوات الصيانة والنسخ الاحتياطي</h4>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {/* Stats */}
+                            <button
+                              type="button"
+                              onClick={() => setAdvancedDbView('stats')}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl">
+                                <Database size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">إحصائيات البيانات</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">تفاصيل وحجم قاعدة البيانات الحالية</span>
+                              </div>
+                            </button>
+
+                            {/* Audit & Repair */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAdvancedDbView('audit');
+                                runDatabaseAudit();
+                              }}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-orange-500/10 text-orange-500 rounded-xl">
+                                <Shield size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">تدقيق ومطابقة السجلات</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">فحص تضاربات العدادات والعمليات وإصلاحها تلقائياً</span>
+                              </div>
+                            </button>
+
+                            {/* Backup */}
+                            <button
+                              type="button"
+                              onClick={() => setAdvancedDbView('backup_manual')}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-purple-500/10 text-purple-500 rounded-xl">
+                                <HardDrive size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">النسخ الاحتياطي واليدوي</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">إعداد النسخ التلقائي وبدء نسخ فوري</span>
+                              </div>
+                            </button>
+
+                            {/* Export */}
+                            <button
+                              type="button"
+                              onClick={() => setAdvancedDbView('export')}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
+                                <Download size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">تصدير بلاس JSON</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">تصدير ملف شامل ومنظم لكافة البيانات</span>
+                              </div>
+                            </button>
+
+                            {/* Import */}
+                            <button
+                              type="button"
+                              onClick={() => setAdvancedDbView('import')}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-orange-500/10 text-orange-500 rounded-xl">
+                                <Upload size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">الاستيراد والاستعادة</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">استعادة السجلات من ملف نسخة احتياطية</span>
+                              </div>
+                            </button>
+
+                            {/* Archive */}
+                            <button
+                              type="button"
+                              onClick={() => setAdvancedDbView('archive')}
+                              className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-orange-500/30 text-right transition-all group shadow-md"
+                            >
+                              <div className="p-3 bg-gray-500/10 text-gray-400 rounded-xl">
+                                <Archive size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-white">أرشفة السجلات القديمة</span>
+                                <span className="block text-[10px] text-gray-500 mt-0.5">مسح ونقل السجلات الأقدم من سنة للأرشيف</span>
+                              </div>
+                            </button>
+
+                            {/* Factory Reset */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                console.log('Advanced DB - Reset Button clicked');
+                                resetAllDataTemp();
+                              }}
+                              className="flex items-center gap-3 p-4 bg-red-500/5 hover:bg-red-500/10 rounded-2xl border border-red-500/10 hover:border-red-500/30 text-right transition-all group shadow-md col-span-full cursor-pointer"
+                            >
+                              <div className="p-3 bg-red-500/10 text-red-500 rounded-xl">
+                                <RotateCcw size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <span className="block text-sm font-bold text-red-500">تهيئة النظام (ضبط المصنع)</span>
+                                <span className="block text-[10px] text-red-400/75 mt-0.5">تحذير: مسح وتصفير كافة بيانات ومبيعات وإعدادات النظام نهائياً</span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                        </div>
+                        )}
+                            </div>
+                          ) : (
+                            <motion.div
+                              initial={{ opacity: 0, x: 20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              className="space-y-4"
+                            >
+                              {/* Subview Back Button */}
+                              <button
+                                type="button"
+                                onClick={() => setAdvancedDbView('list')}
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all border border-white/5 flex items-center gap-2 text-xs font-bold cursor-pointer"
+                              >
+                                <ArrowRight size={14} />
+                                <span>العودة للوحة تحكم البيانات</span>
+                              </button>
+
+                        {advancedDbView === 'stats' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 p-5 space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-3 bg-blue-600 text-white rounded-lg shadow-xl"><Database size={20} /></div>
+                              <div>
+                                <h3 className="text-lg font-black text-white font-cairo">تفاصيل قاعدة البيانات</h3>
+                                <p className="text-[10px] text-gray-500 mt-0.5">فحص حجم البيانات وإجمالي السجلات</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                              {[
+                                { label: 'الفواتير المسجلة', value: statsData.invoices, icon: FileText, color: 'text-blue-500' },
+                                { label: 'العملاء المسجلين', value: statsData.customers, icon: Smartphone, color: 'text-purple-500' },
+                                { label: 'عمليات الصيانة', value: statsData.maintenance, icon: RefreshCw, color: 'text-orange-500' },
+                                { label: 'رقم الفاتورة القادمة', value: invoiceCounter + 1, icon: Shield, color: 'text-emerald-500' },
+                              ].map((stat, i) => (
+                                <div key={i} className="p-4 bg-black/40 rounded-xl border border-white/5 flex flex-col items-center text-center gap-1.5 shadow-md">
+                                  <stat.icon className={stat.color} size={20} />
+                                  <span className="text-lg font-black text-white">{stat.value}</span>
+                                  <span className="text-[10px] text-gray-500 uppercase font-black">{stat.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        )}
+
+                        {advancedDbView === 'backup_manual' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 overflow-hidden shadow-2xl">
+                             <div className="p-5 border-b border-white/5 bg-gradient-to-br from-emerald-600/10 to-transparent flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                  <div className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg ring-2 ring-emerald-600/20">
+                                    <Database size={24} />
+                                  </div>
+                                  <div>
+                                    <h2 className="font-mono text-lg font-black text-white uppercase tracking-tighter">إعدادات ومسار النسخ الاحتياطي</h2>
+                                    <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-widest mt-0.5">Automatic & Manual Backups</p>
+                                  </div>
+                                </div>
+                             </div>
+                             <div className="p-5 space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   <div className="p-5 bg-black/40 rounded-[1.5rem] border border-white/5 space-y-4">
+                                      <div className="flex items-center justify-between">
+                                         <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-emerald-600/10 text-emerald-500 rounded-xl"><Clock size={24} /></div>
+                                            <span className="font-bold text-sm text-white">النسخ التلقائي</span>
+                                         </div>
+                                         <label className="relative inline-flex items-center cursor-pointer scale-110">
+                                            <input type="checkbox" checked={autoBackup} onChange={e => setAutoBackup(e.target.checked)} className="sr-only peer" />
+                                            <div className="w-12 h-6 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 shadow-inner"></div>
+                                         </label>
                                       </div>
+                                      {autoBackup && (
+                                         <div className="space-y-2 pt-2 border-t border-white/5">
+                                            <label className="text-[9px] text-gray-400 uppercase font-black tracking-widest block text-right">توقيت إجراء النسخ اليومي</label>
+                                            <input type="time" value={backupTime} onChange={e => setBackupTime(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white text-2xl font-mono text-center focus:border-emerald-500 outline-none" />
+                                         </div>
+                                      )}
                                    </div>
-                                   <button onClick={async () => {
-                                     const newPass = window.prompt('أدخل كلمة المرور الجديدة للمدير العام:');
-                                     if (!newPass) return;
-                                     try {
-                                        const { collection, query, where, getDocs, updateDoc, doc } = await import('../firebase');
-                                        const { db } = await import('../firebase');
-                                        const q = query(collection(db, 'users'), where('username', '==', 'admin'));
-                                        const snap = await getDocs(q);
-                                        if (!snap.empty) {
-                                           await updateDoc(doc(db, 'users', snap.docs[0].id), { password: newPass });
-                                           alert('تم تغيير كلمة المرور للمدير العام بنجاح');
-                                        } else {
-                                           alert('حساب المدير العام غير موجود');
-                                        }
-                                     } catch (e) {
-                                        alert('حدث خطأ');
-                                     }
-                                   }} className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 text-xs shadow-lg cursor-pointer">
-                                      <Lock size={13} />
-                                      تغيير كلمة المرور
+                                   <div className="p-5 bg-black/40 rounded-[1.5rem] border border-white/5 space-y-4">
+                                      <div className="flex items-center gap-3">
+                                         <div className="p-3 bg-emerald-600/10 text-emerald-500 rounded-xl"><HardDrive size={24} /></div>
+                                         <span className="font-bold text-sm text-white">مسار حفظ الملفات على الجهاز</span>
+                                      </div>
+                                      <input type="text" readOnly value={backupPath} className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-mono text-gray-400 truncate" />
+                                   </div>
+                                </div>
+                                <div className="flex gap-4">
+                                   <button onClick={handleSaveSettings} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-bold text-sm shadow-xl transition-all active:scale-95 cursor-pointer">حفظ إعدادات المزامنة</button>
+                                   <button
+                                     disabled={backupLoading}
+                                     onClick={handleExportBackup} 
+                                     className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3.5 rounded-xl font-bold text-sm shadow-xl transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                                   >
+                                     {backupLoading ? 'جاري تصدير نسخة...' : 'نسخ احتياطي فوري الآن'}
                                    </button>
                                 </div>
-                                <div className="mt-4">
-                                  <label className="text-xs font-bold text-gray-500 mb-2 block">البريد الإلكتروني لاستعادة كلمة المرور (اختياري)</label>
-                                  <input type="email" placeholder="email@example.com" className="w-full max-w-sm bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-left text-white" dir="ltr" />
-                                </div>
                              </div>
+                          </section>
+                        )}
 
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
-                                <SystemManagersList />
-                             </div>
-                          </div>
-                        
-                              )}
-                              {activeAdvancedModal === 'system_reset' && (
-                          <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-6 text-center animate-in fade-in duration-200">
-                             <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto">
-                                <Shield size={40} />
+                        {advancedDbView === 'export' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 p-8 text-center space-y-4">
+                             <div className="p-4 bg-emerald-600/10 text-emerald-500 rounded-full w-16 h-16 mx-auto flex items-center justify-center">
+                                <Download size={28} />
                              </div>
                              <div>
-                                <h3 className="text-xl font-bold text-white mb-2">إعادة التهيئة الشاملة</h3>
-                                <p className="text-gray-400 text-sm leading-relaxed max-w-lg mx-auto">
-                                   سيتم مسح كافة البيانات والسجلات والعودة إلى وضع التهيئة الافتراضي للنظام.
-                                </p>
+                                <h3 className="text-xl font-black text-white font-cairo">تصدير بلاس شامل</h3>
+                                <p className="text-gray-500 mt-1 text-[11px] max-w-sm mx-auto leading-relaxed">تجهيز وتحميل ملف شامل يحتوي على كافة الحركات المالية، سجلات الصيانة، قاعدة بيانات المهندسين، والعملاء بتنسيق JSON للنسخ الخارجي.</p>
                              </div>
-                             <button
-                               onClick={() => resetAllDataTemp()}
-                               className="bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3 rounded-xl text-sm transition-all cursor-pointer shadow-lg shadow-red-900/20"
+                             <button 
+                               disabled={backupLoading}
+                               onClick={handleExportBackup} 
+                               className="bg-white text-black px-8 py-3 rounded-xl font-black text-xs hover:scale-105 active:scale-95 transition-all flex items-center gap-2 mx-auto disabled:opacity-50 cursor-pointer"
                              >
-                               تأكيد إعادة التهيئة
+                                <Download size={16} />
+                                <span>{backupLoading ? 'جاري تصدير الملف...' : 'بدء تجهيز وتحميل الملف'}</span>
                              </button>
-                          </div>
-                        
-                              )}
-                            </div>
-                          </motion.div>
-                        </div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
+                          </section>
+                        )}
 
-                {activeTab === 'management' && (
-                  <div className="space-y-6 pb-8 text-right font-cairo" dir="rtl">
-                    <div className="grid grid-cols-1 gap-4 max-w-2xl mx-auto pt-4">
-                      <button type="button" onClick={() => { setManagementTab('database_read'); setActiveManagementModal('database_read'); }} className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
-                            <Database size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">بيانات قاعدة البيانات</h3>
-                            <p className="text-xs text-gray-400 mt-1">عرض وتصدير بيانات قاعدة البيانات</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
-                      <button type="button" onClick={() => { setManagementTab('backup'); setActiveManagementModal('backup'); }} className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
-                            <Download size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">النسخ الاحتياطي</h3>
-                            <p className="text-xs text-gray-400 mt-1">إدارة عمليات النسخ الاحتياطي والأرشفة</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
-                      <button type="button" onClick={() => { setManagementTab('devices'); setActiveManagementModal('devices'); }} className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-orange-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition-all">
-                            <Smartphone size={22} />
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-white text-base">إدارة الأجهزة المسموحة</h3>
-                            <p className="text-xs text-gray-400 mt-1">إدارة الأجهزة المصرح لها بالدخول للنظام</p>
-                          </div>
-                        </div>
-                        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
-                      </button>
-                    </div>
+                        {advancedDbView === 'import' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 p-8 text-center space-y-4">
+                             <div className="p-4 bg-orange-600/10 text-orange-500 rounded-full w-16 h-16 mx-auto flex items-center justify-center">
+                                <Upload size={28} />
+                             </div>
+                             <div>
+                                <h3 className="text-xl font-black text-white font-cairo">استعادة البيانات</h3>
+                                <p className="text-gray-500 mt-1 text-[11px] max-w-sm mx-auto leading-relaxed">قم برفع ملف النسخ الاحتياطي (JSON) لإعادة بناء السجلات الحالية. تنبيه: سيؤدي الاستيراد إلى دمج أو استبدال البيانات الحالية.</p>
+                             </div>
+                             <label className={`max-w-xs mx-auto border border-dashed border-white/20 p-6 rounded-2xl hover:border-orange-500/50 transition-colors cursor-pointer group block ${backupLoading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                <FileText className="mx-auto text-gray-600 group-hover:text-orange-500 transition-colors" size={32} />
+                                <p className="mt-2 text-xs text-gray-500">{backupLoading ? 'جاري تحليل واستعادة قاعدة البيانات...' : 'انقر هنا لتحديد ملف النسخ (.json)'}</p>
+                                <input 
+                                  type="file" 
+                                  accept=".json"
+                                  className="hidden"
+                                  onChange={handleImportBackup}
+                                />
+                             </label>
+                          </section>
+                        )}
 
-                    <AnimatePresence>
-                      {activeManagementModal !== null && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-sm">
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-[#1a1a1a] w-full h-full sm:h-[85vh] max-w-4xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-white/10"
-                          >
-                            <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/20 sticky top-0 z-10 backdrop-blur-md">
-                              <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                                {activeManagementModal === 'database_read' && <Database className="text-orange-500" size={20} />}
-                                {activeManagementModal === 'backup' && <Download className="text-orange-500" size={20} />}
-                                {activeManagementModal === 'devices' && <Smartphone className="text-orange-500" size={20} />}
-                                {activeManagementModal === 'database_read' && 'بيانات قاعدة البيانات'}
-                                {activeManagementModal === 'backup' && 'النسخ الاحتياطي'}
-                                {activeManagementModal === 'devices' && 'إدارة الأجهزة المسموحة'}
-                              </h3>
-                              <button
+                        {advancedDbView === 'archive' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 p-8 text-center space-y-4">
+                             <div className="p-4 bg-gray-600/10 text-gray-400 rounded-full w-16 h-16 mx-auto flex items-center justify-center">
+                                <Archive size={28} />
+                             </div>
+                             <div>
+                                <h3 className="text-xl font-black text-white font-cairo">أرشفة الملفات والسجلات القديمة</h3>
+                                <p className="text-gray-500 mt-1 text-[11px] max-w-sm mx-auto leading-relaxed">تصفية السجلات القديمة من شاشة الصيانة والعمليات النشطة لتسريع تحميل البرنامج، ونقل كافة البيانات المنتهية التي مضى عليها 12 شهراً إلى أرشيف محلي منفصل.</p>
+                             </div>
+                             <div className="flex justify-center max-w-sm mx-auto">
+                                <button 
+                                  disabled={backupLoading}
+                                  onClick={handleArchive}
+                                  className="bg-white/10 hover:bg-white/20 border border-white/10 text-white font-black rounded-xl px-8 py-3.5 transition-all text-xs disabled:opacity-50 cursor-pointer"
+                                >
+                                  {backupLoading ? 'جاري الأرشفة الآن...' : 'بدء نقل وأرشفة العمليات القديمة (> 12 شهر)'}
+                                </button>
+                             </div>
+                          </section>
+                        )}
+
+                        {advancedDbView === 'audit' && (
+                          <section className="bg-white/5 rounded-[1.5rem] border border-white/10 p-5 space-y-6 text-gray-200">
+                            <div className="flex flex-col sm:flex-row items-center justify-between border-b border-white/5 pb-4 gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="p-3 bg-orange-600/15 text-orange-500 rounded-xl">
+                                  <Shield size={24} />
+                                </div>
+                                <div>
+                                  <h3 className="text-base font-bold text-white font-cairo">تدقيق ومطابقة السجلات الفعلية (Interactive Database Audit)</h3>
+                                  <p className="text-[10px] text-gray-400 font-bold">فحص سلامة العدادات والعمليات وتطابق السحابة والتحقق من سلامة الجداول المالية.</p>
+                                </div>
+                              </div>
+                              <button 
                                 type="button"
-                                onClick={() => setActiveManagementModal(null)}
-                                className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white cursor-pointer"
+                                onClick={runDatabaseAudit} 
+                                disabled={isAuditing}
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer self-end sm:self-auto"
                               >
-                                <X size={24} />
+                                <RefreshCw size={14} className={isAuditing ? "animate-spin" : ""} />
+                                <span>تحديث الفحص</span>
                               </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar relative">
-                              {activeManagementModal === 'database_read' && (
-                          <div className="space-y-6 animate-in fade-in duration-200">
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
-                                <h4 className="font-bold text-white text-sm">نوع قاعدة البيانات النشطة: {dbMode}</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-blue-600/10 text-blue-500">
-                                      <Database size={18} />
-                                    </div>
-                                    <div className="flex-1">
-                                      <span className="text-xs text-gray-500 block">مصدر البيانات النشط</span>
-                                      <span className="text-sm font-bold text-white">{activeProvider === 'LOCAL' ? 'محلي (SQLite)' : 'سحابي (Firebase)'}</span>
-                                    </div>
-                                  </div>
-                                  <div className="bg-[#1e1e1e] p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-blue-600/10 text-blue-500">
-                                      <Globe size={18} />
-                                    </div>
-                                    <div>
-                                      <span className="text-xs text-gray-500 block">حالة اتصال الشبكة</span>
-                                      <span className={`text-sm font-bold ${navigator.onLine ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                        {navigator.onLine ? 'متصل بالإنترنت' : 'غير متصل بالإنترنت'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                  <div>
-                                    <h4 className="font-bold text-white text-xs">المزامنة</h4>
-                                    <p className="text-[10px] text-gray-500 mt-0.5">آخر مزامنة: اليوم</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={handleSyncNow}
-                                    disabled={syncLoading}
-                                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md self-start sm:self-center"
-                                  >
-                                    {syncLoading ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                                    مزامنة الآن
-                                  </button>
-                                </div>
-                                {syncResult.type && (
-                                  <div className={`p-4 rounded-xl text-xs font-bold border ${syncResult.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                                    {syncResult.message}
+
+                            {isAuditing ? (
+                              <div className="py-12 flex flex-col items-center justify-center gap-4">
+                                <RefreshCw size={36} className="animate-spin text-orange-500" />
+                                <p className="text-xs text-gray-400 font-bold">جاري مراجعة سلامة وتطابق العدادات ومجاميع السجلات...</p>
+                              </div>
+                            ) : auditResults ? (
+                              <div className="space-y-6">
+                                {repairProgress.message && (
+                                  <div className={`p-4 rounded-2xl border text-xs font-bold ${
+                                    repairProgress.status === 'running' ? 'bg-orange-600/10 border-orange-500/30 text-orange-400 font-mono' :
+                                    repairProgress.status === 'completed' ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400 font-bold' :
+                                    repairProgress.status === 'error' ? 'bg-red-600/10 border-red-500/30 text-red-400 font-bold' : 'bg-white/5 border-white/10 text-white'
+                                  }`}>
+                                    <p>{repairProgress.message}</p>
                                   </div>
                                 )}
-                             </div>
-                          </div>
-                        
-                              )}
-                              {activeManagementModal === 'backup' && (
-                           <div className="animate-in fade-in duration-200">
-                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
-                                <h4 className="font-bold text-white text-sm">أدوات الصيانة والنسخ الاحتياطي</h4>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                                <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-gradient-to-r from-orange-600/10 to-amber-600/5 rounded-2.5xl border border-orange-500/15 gap-4">
+                                  <div className="text-right flex-1">
+                                    <p className="text-white font-black text-sm">تسوية وتصحيح التضاربات تلقائياً</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">تعديل عداد الفواتير والعملاء، موازنة حركات الصندوق المتصلة بالصيانة، وتسوية مجاميع العلاقات بكبسة زر واحدة.</p>
+                                  </div>
                                   <button
                                     type="button"
-                                    onClick={handleExportBackup}
-                                    disabled={backupLoading}
-                                    className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-blue-500/30 text-right transition-all group shadow-md disabled:opacity-50"
+                                    onClick={repairAllDiscrepancies}
+                                    className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white rounded-2xl font-black text-xs shadow-xl transition-all text-center shrink-0 cursor-pointer"
                                   >
-                                    <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
-                                      <Download size={20} />
-                                    </div>
-                                    <div className="flex-1">
-                                      <span className="block text-sm font-bold text-white">تصدير بلاس JSON</span>
-                                      <span className="block text-[10px] text-gray-500 mt-0.5">تصدير ملف شامل للبيانات</span>
-                                    </div>
+                                    إصلاح وتصحيح التضاربات تلقائياً
                                   </button>
-                                  <label className="flex items-center gap-3 p-4 bg-[#1e1e1e] hover:bg-[#252525] rounded-2xl border border-white/5 hover:border-blue-500/30 text-right transition-all group shadow-md cursor-pointer">
-                                    <div className="p-3 bg-orange-500/10 text-orange-500 rounded-xl">
-                                      <Upload size={20} />
-                                    </div>
-                                    <div className="flex-1">
-                                      <span className="block text-sm font-bold text-white">الاستيراد والاستعادة</span>
-                                      <span className="block text-[10px] text-gray-500 mt-0.5">استعادة السجلات من ملف</span>
-                                    </div>
-                                    <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-                                  </label>
                                 </div>
-                             </div>
-                           </div>
-                        
-                              )}
-                              {activeManagementModal === 'devices' && (
-                          <div className="animate-in fade-in duration-200">
-                            <DeviceManagement user={user} onBack={() => setManagementTab('database_read')} shopConfig={shopConfig} />
-                          </div>
-                        
-                              )}
-                            </div>
-                          </motion.div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">عداد تسلسل الفواتير</span>
+                                      {auditResults.invoiceCounter.conflict ? (
+                                        <span className="px-2.5 py-1 bg-red-500/10 text-red-500 rounded-lg text-[10px] font-black">تضارب مكتشف</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs space-y-1 text-gray-400">
+                                      <p>العداد المسجل بالإعدادات: <strong className="text-white font-mono">{auditResults.invoiceCounter.registered}</strong></p>
+                                      <p>أعلى رقم فاتورة فعلي باللائحة: <strong className="text-white font-mono">{auditResults.invoiceCounter.actualMax}</strong></p>
+                                    </div>
+                                  </div>
+
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">عداد تسلسل أرقام العملاء</span>
+                                      {auditResults.customerCounter.conflict ? (
+                                        <span className="px-2.5 py-1 bg-red-500/10 text-red-500 rounded-lg text-[10px] font-black">تضارب مكتشف</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs space-y-1 text-gray-400">
+                                      <p>العداد المسجل بالإعدادات: <strong className="text-white font-mono">{auditResults.customerCounter.registered}</strong></p>
+                                      <p>أعلى رقم تسلسلي للعملاء باللائحة: <strong className="text-white font-mono">{auditResults.customerCounter.actualMax}</strong></p>
+                                    </div>
+                                  </div>
+
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">مطابقة قيمة الفاتورة ومجاميع الأجهزة</span>
+                                      {auditResults.totalDiscrepancies.length > 0 ? (
+                                        <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 rounded-lg text-[10px] font-black">{auditResults.totalDiscrepancies.length} تباينات</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-400">التحقق من مجموع أسعار الأجهزة الملحقة مقابل اجمالي الفاتورة العام.</p>
+                                    {auditResults.totalDiscrepancies.length > 0 && (
+                                      <div className="max-h-24 overflow-y-auto space-y-1.5 p-2 bg-black/40 rounded-xl font-mono text-[10px] text-red-300">
+                                        {auditResults.totalDiscrepancies.map((d: any, idx: number) => (
+                                          <p key={idx}>فاتورة #{d.invoiceNumber}: الفاتورة ({d.currentTotal}) ↔ المجموع الحقيقي ({d.computedTotal})</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">مطابقة الحالات والوضع الفني للعمليات</span>
+                                      {auditResults.statusDiscrepancies.length > 0 ? (
+                                        <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-lg text-[10px] font-black">{auditResults.statusDiscrepancies.length} اختلافات</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-400">مراجعة الحالة الخارجية للفاتورة ومطابقتها بمراحل العمليات الفنية الفردية.</p>
+                                    {auditResults.statusDiscrepancies.length > 0 && (
+                                      <div className="max-h-24 overflow-y-auto space-y-1.5 p-2 bg-black/30 rounded-xl font-mono text-[10px] text-amber-300">
+                                        {auditResults.statusDiscrepancies.map((d: any, idx: number) => (
+                                          <p key={idx}>فاتورة #{d.invoiceNumber}: مسجل ({d.currentStatus}) ↔ الفعلي ({d.expectedStatus})</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">تطابق الصندوق والمدفوعات</span>
+                                      {auditResults.paymentImbalances.length > 0 ? (
+                                        <span className="px-2.5 py-1 bg-red-500/10 text-red-500 rounded-lg text-[10px] font-black">{auditResults.paymentImbalances.length} عدم تطابق</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-400">مقارنة وتدقيق المقبوض الفعلي في صندوق الخزينة مع اجمالي المدفوعات بالفاتورة.</p>
+                                    {auditResults.paymentImbalances.length > 0 && (
+                                      <div className="max-h-28 overflow-y-auto space-y-1.5 p-2 bg-black/30 rounded-xl font-mono text-[10px] text-red-300">
+                                        {auditResults.paymentImbalances.map((d: any, idx: number) => (
+                                          <p key={idx}>فاتورة #{d.invoiceNumber}: الفاتورة ({d.amountPaidOnInvoice}) ↔ المقبوض بالصندوق ({d.amountInLedger})</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-sm text-white">السجلات اليتيمة والتالفة</span>
+                                      {(auditResults.orphanedItems.length > 0 || auditResults.emptyInvoices.length > 0) ? (
+                                        <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-lg text-[10px] font-black">تباينات مكتشفة</span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-black">سليم</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs space-y-1 text-gray-400">
+                                      <p>قطع غيار يتيمة بلا فواتير رئيسية: <strong className="text-white font-mono">{auditResults.orphanedItems.length}</strong></p>
+                                      <p>فواتير فارغة كلياً بلا أجهزة مسجلة: <strong className="text-white font-mono">{auditResults.emptyInvoices.length}</strong></p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center py-12 text-gray-500 select-none">
+                                 يرجى النقر فوق "تحديث الفحص" لبدء مراجعة قواعد البيانات وتحقيق السلامة.
+                              </div>
+                            )}
+                          </section>
+                        )}
+                            </motion.div>
+                          )}
                         </div>
-                      )}
-                    </AnimatePresence>
+                      </div>
+                    )}
+                    </div>
                   </div>
+                </div>
                 )}
                   </>
                 )}

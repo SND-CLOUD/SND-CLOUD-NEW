@@ -28,9 +28,10 @@ let db: Firestore | null = null;
 
 try {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  db = firebaseConfig.firestoreDatabaseId
-    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-    : getFirestore(app);
+  const dbId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== 'default'
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+  db = dbId ? getFirestore(app, dbId) : getFirestore(app);
 } catch (err) {
   console.error('Failed to initialize Firebase Firestore SDK', err);
 }

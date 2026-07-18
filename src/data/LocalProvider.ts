@@ -3,8 +3,6 @@ import { localDb } from '../lib/local-db';
 import { generateUUID } from './utils';
 
 export class LocalProvider implements IDataProvider {
-  private tableColumnsCache: Record<string, string[]> = {};
-
   async getDoc(collectionName: string, id: string): Promise<any> {
     if (collectionName === 'settings') {
       const res = await localDb.query('SELECT * FROM settings WHERE id = ?', [id]);
@@ -143,26 +141,6 @@ export class LocalProvider implements IDataProvider {
         }
       });
 
-      if (!this.tableColumnsCache[collectionName]) {
-        try {
-          const pragmaRes = await localDb.query(`PRAGMA table_info(${collectionName})`);
-          if (pragmaRes.values) {
-            this.tableColumnsCache[collectionName] = pragmaRes.values.map(v => v.name);
-          }
-        } catch (e) {
-          console.warn(`Could not fetch table info for ${collectionName}`);
-        }
-      }
-
-      const validColumns = this.tableColumnsCache[collectionName];
-      if (validColumns && validColumns.length > 0) {
-        Object.keys(finalData).forEach(key => {
-          if (key !== 'id' && !validColumns.includes(key)) {
-            delete finalData[key];
-          }
-        });
-      }
-
       const fields = Object.keys(finalData);
       const placeholders = fields.map(() => '?').join(', ');
       const updatePlaceholders = fields.map(f => `${f} = ?`).join(', ');
@@ -209,31 +187,6 @@ export class LocalProvider implements IDataProvider {
         }
       }
     });
-
-    if (!this.tableColumnsCache[collectionName]) {
-      try {
-        const pragmaRes = await localDb.query(`PRAGMA table_info(${collectionName})`);
-        if (pragmaRes.values) {
-          this.tableColumnsCache[collectionName] = pragmaRes.values.map(v => v.name);
-        }
-      } catch (e) {
-        console.warn(`Could not fetch table info for ${collectionName}`);
-      }
-    }
-
-    const validColumns = this.tableColumnsCache[collectionName];
-    if (validColumns && validColumns.length > 0) {
-      Object.keys(cleanedData).forEach(key => {
-        if (!validColumns.includes(key)) {
-          delete cleanedData[key];
-        }
-      });
-      for (let i = increments.length - 1; i >= 0; i--) {
-        if (!validColumns.includes(increments[i].key)) {
-          increments.splice(i, 1);
-        }
-      }
-    }
 
     const fields = Object.keys(cleanedData);
     const updateParts = fields.map(f => `${f} = ?`);

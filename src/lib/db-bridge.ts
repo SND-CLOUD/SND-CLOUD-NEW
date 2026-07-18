@@ -60,28 +60,35 @@ export const serverTimestamp = () => ({
 
 const getProvider = () => ProviderFactory.getProvider();
 
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number = 4000, errorMsg: string = 'Operation timed out'): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), timeoutMs))
+  ]);
+};
+
 export const getDoc = async (docRef: any) => {
-  return getProvider().getDoc(docRef.name, docRef.id);
+  return withTimeout(getProvider().getDoc(docRef.name, docRef.id), 4000, `getDoc timed out for ${docRef.name}/${docRef.id}`);
 };
 
 export const getDocs = async (queryRef: any) => {
-  return getProvider().getDocs(queryRef.name, queryRef.constraints);
+  return withTimeout(getProvider().getDocs(queryRef.name, queryRef.constraints), 5000, `getDocs timed out for ${queryRef.name}`);
 };
 
 export const setDoc = async (docRef: any, data: any, options?: any) => {
-  return getProvider().setDoc(docRef.name, docRef.id, data, options);
+  return withTimeout(getProvider().setDoc(docRef.name, docRef.id, data, options), 5000, `setDoc timed out for ${docRef.name}/${docRef.id}`);
 };
 
 export const addDoc = async (colRef: any, data: any, more?: any) => {
-  return getProvider().addDoc(colRef.name, data);
+  return withTimeout(getProvider().addDoc(colRef.name, data), 5000, `addDoc timed out for ${colRef.name}`);
 };
 
 export const updateDoc = async (docRef: any, data: any, more?: any) => {
-  return getProvider().updateDoc(docRef.name, docRef.id, data);
+  return withTimeout(getProvider().updateDoc(docRef.name, docRef.id, data), 5000, `updateDoc timed out for ${docRef.name}/${docRef.id}`);
 };
 
 export const deleteDoc = async (docRef: any) => {
-  return getProvider().deleteDoc(docRef.name, docRef.id);
+  return withTimeout(getProvider().deleteDoc(docRef.name, docRef.id), 5000, `deleteDoc timed out for ${docRef.name}/${docRef.id}`);
 };
 
 export const onSnapshot = (queryRef: any, callback: any, errorCallback?: any) => {

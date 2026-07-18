@@ -64,12 +64,11 @@ class LocalDatabase {
               }
             });
             observer.observe(document.body, { childList: true, subtree: true });
-            // Timeout after 5 seconds
+            // Timeout after 2 seconds
             setTimeout(() => {
-              console.warn('Timed out waiting for jeep-sqlite');
               observer.disconnect();
               resolve();
-            }, 5000);
+            }, 2000);
           });
         };
 
@@ -796,7 +795,6 @@ class LocalDatabase {
 
     } catch (err) {
       console.error('SQLite initialization failed', err);
-      this.initializingPromise = null;
     }
     })();
 

@@ -11,12 +11,10 @@ const init = async () => {
     await defineJeepSqlite(window);
     
     // Check if jeep-sqlite is in the DOM
-    let jeepSqlite = document.querySelector('jeep-sqlite');
-    if (!jeepSqlite) {
-      jeepSqlite = document.createElement('jeep-sqlite');
-      document.body.appendChild(jeepSqlite);
+    const jeepSqlite = document.querySelector('jeep-sqlite');
+    if (jeepSqlite) {
+      await customElements.whenDefined('jeep-sqlite');
     }
-    await customElements.whenDefined('jeep-sqlite');
   }
   
   try {

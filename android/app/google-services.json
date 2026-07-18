@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "213721609069",
-    "project_id": "web-app-8a8dd",
-    "storage_bucket": "web-app-8a8dd.firebasestorage.app"
+    "project_number": "623057587081",
+    "project_id": "sndmaintenanc",
+    "storage_bucket": "sndmaintenanc.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:213721609069:android:43c9c5525d5b8730b92064",
+        "mobilesdk_app_id": "1:623057587081:android:825c995e5e5890458daf58",
         "android_client_info": {
           "package_name": "com.snd.maintenance"
         }
@@ -15,9 +15,14 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyA0Je37IQ3WJOWoW2swxbVeG2jKuW_3sqA"
+          "current_key": "AIzaSyA_F2YbO6T4hG-LfXGZxkDiVGYV5G8z55g"
         }
-      ]
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"

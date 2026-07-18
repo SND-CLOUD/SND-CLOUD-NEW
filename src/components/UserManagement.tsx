@@ -470,30 +470,29 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" dir="rtl">
-        {users
-          .filter(u => canViewAllUsers || u.id === currentUser.id)
-          .filter(u => u.username !== 'admin' && !u.isPrimary)
-          .map(u => {
-          const isSystemManager = u.role === 'system_manager';
+        {users.filter(u => canViewAllUsers || u.id === currentUser.id).map(u => {
+          const isUserAdmin = u.isPrimary || u.username === 'admin';
           const isUserActive = (u.isActive as any) === undefined || (u.isActive as any) === null || (u.isActive as any) === true || (u.isActive as any) === 1 || (u.isActive as any) === 'true' || (u.isActive as any) === '1';
           const isCurrentUserGM = currentUser.isPrimary || currentUser.username === 'admin';
-          const canEditThisUser = !isSystemManager && (isCurrentUserGM || u.id === currentUser.id || canManageUsers);
+          const canEditThisUser = isUserAdmin 
+            ? isCurrentUserGM 
+            : (isCurrentUserGM || u.id === currentUser.id || canManageUsers);
 
           return (
             <div key={u.id} className="bg-[#242424] p-4 sm:p-5 rounded-2xl border border-white/5 flex flex-row items-center justify-between gap-3 sm:gap-4 group">
               <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                 <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg shrink-0 ${isSystemManager ? 'bg-orange-600 text-white' : 'bg-white/5 text-gray-400'}`}>
+                 <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg shrink-0 ${isUserAdmin ? 'bg-orange-600 text-white' : 'bg-white/5 text-gray-400'}`}>
                     {u.name.charAt(0)}
                  </div>
                  <div className="min-w-0">
                     <h3 className="font-bold flex items-center gap-1.5 sm:gap-2 flex-wrap text-white font-cairo text-sm sm:text-base leading-tight">
                       {u.name}
-                      <span className="text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded border border-white/5 font-mono">#{u.userNumber}</span>
-                      {isSystemManager && <span className="text-[10px] bg-orange-600/20 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase tracking-widest font-black">مدير النظام</span>}
+                      <span className="text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded border border-white/5 font-mono">#{u.userNumber || (isUserAdmin ? 100 : '')}</span>
+                      {isUserAdmin && <span className="text-[10px] bg-orange-600/20 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase tracking-widest font-black">المدير العام</span>}
                       <span className="text-[10px] text-gray-500">@{u.username}</span>
                       
                       {/* Status badge */}
-                      {isSystemManager ? (
+                      {isUserAdmin ? (
                         <span className="text-[10px] bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded border border-green-500/20 font-black">نشط دائم</span>
                       ) : !isUserActive ? (
                         <span className="text-[10px] bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20 font-black">معطل</span>
@@ -505,22 +504,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                  </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                 {isSystemManager ? (
-                    // Only show "تعديل كلمة المرور" (Change Password) button for system_manager
-                     <button
-                       onClick={() => {
-                         setEditingUser(u);
-                         setEditingConfirmPassword(u.password || '');
-                         setShowPassword(false);
-                         setShowConfirmPassword(false);
-                       }}
-                       className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-cairo shadow-lg shadow-orange-950/20 cursor-pointer"
-                       title="تعديل كلمة المرور"
-                     >
-                       <Lock size={13} />
-                       <span>تعديل كلمة المرور</span>
-                     </button>
-                 ) : !hasUsersPermission ? (
+                 {!hasUsersPermission ? (
                    // Only show "تعديل كلمة المرور" (Change Password) button if they are themselves AND they are General Manager
                    u.id === currentUser.id && (
                      <button
@@ -557,8 +541,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                        </button>
                      )}
 
-                     {/* Activation / Deactivation Toggle button - NOT shown for system managers */}
-                     {!isSystemManager && canManageUsers && (
+                     {/* Activation / Deactivation Toggle button - NOT shown for admin */}
+                     {!isUserAdmin && canManageUsers && (
                        <button 
                          onClick={() => toggleUserActive(u)}
                          className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1 text-[11px] sm:text-xs font-bold font-cairo border shadow-sm ${

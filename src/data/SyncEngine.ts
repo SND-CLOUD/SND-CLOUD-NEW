@@ -32,7 +32,7 @@ export class SyncEngine {
     try {
       // 1. Process Outbox (Local -> Cloud) in chronological order (FIFO)
       const outboxRes = await localDb.query(
-        "SELECT * FROM outbox WHERE status IN ('PENDING', 'FAILED') AND retryCount < 5 ORDER BY timestamp ASC, id ASC"
+        "SELECT * FROM outbox WHERE status IN ('PENDING', 'FAILED') ORDER BY timestamp ASC, id ASC"
       );
 
       const items = outboxRes.values || [];
@@ -102,7 +102,8 @@ export class SyncEngine {
                   [gItem.id]
                 );
               }
-              continue; // Skip this group but continue with the rest
+              this.syncing = false;
+              return { success: false, message: `فشلت مزامنة العمليات المترابطة: ${err.message || err}` };
             }
 
           } else {
@@ -142,7 +143,9 @@ export class SyncEngine {
                 "UPDATE outbox SET status = 'FAILED', retryCount = retryCount + 1 WHERE id = ?",
                 [id]
               );
-              continue; // Skip this item but continue with the rest
+              // Pause queue processing to preserve chronological ordering
+              this.syncing = false;
+              return { success: false, message: `فشلت مزامنة العملية ${tableName}/${recordId}: ${err.message || err}` };
             }
           }
         }
