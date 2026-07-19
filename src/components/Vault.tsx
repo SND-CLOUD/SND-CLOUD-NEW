@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { localDb } from '../lib/local-db';
 import { ProviderFactory } from '../data/ProviderFactory';
 import { User, ShopConfig } from '../types';
+import { useBackHandler } from '../hooks/useBackHandler';
 import { usePermissions } from '../hooks/usePermissions';
 import BankAccountsFooter from './BankAccountsFooter';
 import { parseDate, formatDateTime } from '../lib/dateUtils';
@@ -207,6 +208,13 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
   const [invoices, setInvoices] = useState<DB_Invoice[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<VaultTransaction[]>([]);
+
+
+  useBackHandler(reversalTxToConfirm !== null, () => setReversalTxToConfirm(null));
+  useBackHandler(showPrintPreview, () => setShowPrintPreview(false));
+  useBackHandler(showAddModal, () => setShowAddModal(false));
+  useBackHandler(isLedgerModalOpen, () => setIsLedgerModalOpen(false));
+  useBackHandler(activeSegment !== 'dashboard' && !showAddModal && !showPrintPreview && !reversalTxToConfirm && !isLedgerModalOpen, () => setActiveSegment('dashboard'));
 
   // LEDGER CUSTOMER MATH & HELPERS
   const getInvoiceItemsForInvoice = (invoiceNumber: string) => {

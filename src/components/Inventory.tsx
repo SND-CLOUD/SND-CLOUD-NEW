@@ -1,3 +1,4 @@
+import { useBackHandler } from '../hooks/useBackHandler';
 import { useState, useEffect } from 'react';
 import { 
   Search, 
@@ -66,6 +67,12 @@ export default function Inventory({ user, onBack }: { user: User, onBack?: () =>
   // Modal state
   const [isActionFormOpen, setIsActionFormOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  useBackHandler(isActionFormOpen, () => {
+    setIsActionFormOpen(false);
+    setSelectedItemId(null);
+  });
+
 
   // Pagination controls
   const [currentPage, setCurrentPage] = useState(1);

@@ -16,6 +16,7 @@ import { Device } from '@capacitor/device';
 import { NativeBiometric } from 'capacitor-native-biometric';
 import { exportBackupFile, restoreBackupData, archiveOldData } from '../lib/backup';
 import { usePermissions } from '../hooks/usePermissions';
+import { useBackHandler } from '../hooks/useBackHandler';
 
 export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignOut }: { user: User, shopConfig: ShopConfig | null, onShopConfigUpdate?: (config: any) => void, onSignOut?: () => void }) {
   const { t, i18n } = useTranslation();
@@ -25,7 +26,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
     if (catId === 'general' || catId === 'security') return true;
     if (catId === 'accounting-inputs') return hasPermission('settings_main_data', 'view');
     if (catId === 'categories-engineers') return hasPermission('settings_devices_engineers', 'view');
-    if (catId === 'device-management') return hasPermission('settings_device_management', 'view');
+    
     if (catId === 'users') return true;
     return true;
   };
@@ -33,7 +34,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   const [invoiceCounter, setInvoiceCounter] = useState(0);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<{ active: boolean; value: number; label: string }>({ active: false, value: 0, label: '' });
-  const [activeTab, setActiveTab ] = useState<'main' | 'general' | 'security' | 'backup' | 'users' | 'categories-engineers' | 'device-management' | 'accounting-inputs' | 'advanced-management'>('main');
+  const [activeTab, setActiveTab ] = useState<'main' | 'general' | 'security' | 'backup' | 'users' | 'categories-engineers' | 'accounting-inputs' | 'advanced-management'>('main');
   const [backupSubTab, setBackupSubTab] = useState<'list' | 'stats' | 'backup_manual' | 'export' | 'import' | 'archive' | 'reset' | 'audit'>('list');
   const [advancedDbView, setAdvancedDbView] = useState<'list' | 'stats' | 'backup_manual' | 'export' | 'import' | 'archive' | 'reset' | 'audit'>('list');
   const [advancedTab, setAdvancedTab] = useState<'database' | 'devices'>('database');
@@ -45,6 +46,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   // Shop details states
   const [activeCategoriesEngineersModal, setActiveCategoriesEngineersModal] = useState<'categories' | 'engineers' | null>(null);
   const [activeAccountingInputsModal, setActiveAccountingInputsModal] = useState<'accounting' | 'details' | 'backup' | null>(null);
+  const [activeAdvancedManagementModal, setActiveAdvancedManagementModal] = useState<'database-sync' | 'database-backup' | 'devices' | null>(null);
   const [generalSubTab, setGeneralSubTab] = useState<'language' | 'details' | 'advanced' | 'database'>('language');
   const [activeGeneralModal, setActiveGeneralModal] = useState<'language' | 'details' | 'advanced' | 'database' | null>(null);
   
@@ -138,25 +140,32 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
     }
   };
 
+  const isSettingsDeepView = activeTab !== 'main' || activeGeneralModal !== null || activeCategoriesEngineersModal !== null || activeAccountingInputsModal !== null || activeAdvancedManagementModal !== null;
+  const handleCloseDeepView = () => {
+    if (activeGeneralModal !== null) {
+      setActiveGeneralModal(null);
+    } else if (activeCategoriesEngineersModal !== null) {
+      setActiveCategoriesEngineersModal(null);
+    } else if (activeAccountingInputsModal !== null) {
+      setActiveAccountingInputsModal(null);
+    } else if (activeAdvancedManagementModal !== null) {
+      setActiveAdvancedManagementModal(null);
+    } else {
+      setActiveTab('main');
+    }
+  };
+  
+  useBackHandler(isSettingsDeepView, handleCloseDeepView);
+
   useEffect(() => {
-    (window as any).isSettingsDeepView = activeTab !== 'main' || activeGeneralModal !== null || activeCategoriesEngineersModal !== null || activeAccountingInputsModal !== null;
-    const handleCloseDeepView = () => {
-      if (activeGeneralModal !== null) {
-        setActiveGeneralModal(null);
-      } else if (activeCategoriesEngineersModal !== null) {
-        setActiveCategoriesEngineersModal(null);
-      } else if (activeAccountingInputsModal !== null) {
-        setActiveAccountingInputsModal(null);
-      } else {
-        setActiveTab('main');
-      }
-    };
+    // Keep this for legacy if something else triggers it, though not strictly needed anymore
+    (window as any).isSettingsDeepView = isSettingsDeepView;
     window.addEventListener('closeSettingsDeepView', handleCloseDeepView);
     return () => {
       (window as any).isSettingsDeepView = false;
       window.removeEventListener('closeSettingsDeepView', handleCloseDeepView);
     };
-  }, [activeTab, activeGeneralModal, activeCategoriesEngineersModal, activeAccountingInputsModal]);
+  }, [isSettingsDeepView, activeTab, activeGeneralModal, activeCategoriesEngineersModal, activeAccountingInputsModal, activeAdvancedManagementModal]);
 
   useEffect(() => {
     const fetch = async () => {
@@ -851,12 +860,11 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
 
   const categories = [
     { id: 'general', title: t('settings.general'), icon: RefreshCw, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { id: 'advanced-management', title: 'إدارة متقدمة', icon: SettingsIcon, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
     { id: 'accounting-inputs', title: 'مدخلات البيانات الرئيسية', icon: Calculator, color: 'text-amber-500', bg: 'bg-amber-500/10' },
     { id: 'categories-engineers', title: 'تصنيفات الأجهزة والمهندسين', icon: Cpu, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { id: 'device-management', title: 'إدارة الأجهزة', icon: Cpu, color: 'text-rose-500', bg: 'bg-rose-500/10' },
     { id: 'users', title: t('settings.users'), icon: Smartphone, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-    { id: 'security', title: t('settings.security'), icon: Shield, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-    { id: 'advanced-management', title: 'إدارة متقدمة', icon: SettingsIcon, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+    { id: 'security', title: t('settings.security'), icon: Shield, color: 'text-orange-500', bg: 'bg-orange-500/10' }
   ];
 
   return (
@@ -945,7 +953,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                       {activeTab === 'security' && t('settings.security')}
                       {activeTab === 'users' && t('settings.users')}
                       {activeTab === 'categories-engineers' && 'تصنيفات الأجهزة والمهندسين'}
-                      {activeTab === 'device-management' && 'إدارة الأجهزة'}
+                      
                       {activeTab === 'advanced-management' && 'إدارة متقدمة'}
                     </h1>
                   </div>
@@ -1441,9 +1449,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                   </div>
                 )}
 
-                {activeTab === 'device-management' && (
-                   <DeviceManagement user={user} onBack={() => setActiveTab('main')} shopConfig={shopConfig} />
-                )}
+
 
                 {activeTab === 'accounting-inputs' && (
                   <div className="space-y-6 pb-8 text-right font-cairo" dir="rtl">
@@ -2541,89 +2547,110 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                 )}
 
                 {activeTab === 'advanced-management' && (
-                  <div className="pb-8 text-right font-cairo animate-in fade-in duration-200" dir="rtl">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                      {/* Sidebar Tabs - Vertical Layout */}
-                      <div className="md:col-span-1 flex flex-col gap-2 border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAdvancedTab('database');
-                            setAdvancedDbView('list');
-                          }}
-                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
-                            advancedTab === 'database'
-                              ? 'bg-orange-600 text-white shadow-lg'
-                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                          }`}
-                        >
-                          <Database size={18} />
-                          <span>إدارة قاعدة البيانات</span>
-                        </button>
+  <div className="space-y-6 pb-8 text-right font-cairo" dir="rtl">
+    <div className="grid grid-cols-1 gap-4 max-w-2xl mx-auto pt-4">
+      {/* 1. Database and Sync Option */}
+      <button
+        type="button"
+        onClick={() => {
+          setAdvancedTab('database');
+          setAdvancedDbSubTab('sync');
+          setActiveAdvancedManagementModal('database-sync');
+          setAdvancedDbView('list');
+        }}
+        className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-indigo-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer mx-4 md:mx-0"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
+            <RefreshCw size={22} />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-base">قاعدة البيانات والمزامنة</h3>
+            <p className="text-xs text-gray-400 mt-1">إعدادات الاتصال وقاعدة البيانات الحالية والمزامنة المباشرة</p>
+          </div>
+        </div>
+        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
+      </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setAdvancedTab('devices')}
-                          className={`w-full px-5 py-4 rounded-2xl text-sm font-bold shadow-md flex items-center gap-3 cursor-pointer transition-all ${
-                            advancedTab === 'devices'
-                              ? 'bg-orange-600 text-white shadow-lg'
-                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                          }`}
-                        >
-                          <Cpu size={18} />
-                          <span>إدارة الأجهزة</span>
-                        </button>
-                      </div>
+      {/* 2. Backup Option */}
+      <button
+        type="button"
+        onClick={() => {
+          setAdvancedTab('database');
+          setAdvancedDbSubTab('backup');
+          setActiveAdvancedManagementModal('database-backup');
+          setAdvancedDbView('list');
+        }}
+        className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-indigo-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer mx-4 md:mx-0"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
+            <Database size={22} />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-base">نسخ البيانات والمزامنة</h3>
+            <p className="text-xs text-gray-400 mt-1">النسخ الاحتياطي اليدوي والتلقائي والأرشفة واستعادة البيانات</p>
+          </div>
+        </div>
+        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
+      </button>
 
-                      {/* Main Content Area */}
-                      <div className="md:col-span-3">
-                        {advancedTab === 'devices' ? (
-                          <div className="animate-in fade-in duration-200">
-                            <DeviceManagement user={user} onBack={() => setAdvancedTab('database')} shopConfig={shopConfig} />
-                          </div>
-                        ) : (
-                          // Database Management Section with Vertical Subtabs
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            {/* Inner Sidebar for Database Management - Vertical Layout */}
-                            <div className="md:col-span-1 flex flex-col gap-2 border-b md:border-b-0 md:border-l border-white/5 pb-4 md:pb-0 md:pl-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAdvancedDbSubTab('sync');
-                                  setAdvancedDbView('list');
-                                }}
-                                className={`w-full px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                                  advancedDbSubTab === 'sync'
-                                    ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md font-black'
-                                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                                }`}
-                              >
-                                <RefreshCw size={14} />
-                                <span>قاعدة البيانات والمزامنة</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAdvancedDbSubTab('backup');
-                                  setAdvancedDbView('list');
-                                }}
-                                className={`w-full px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                                  advancedDbSubTab === 'backup'
-                                    ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-md font-black'
-                                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                                }`}
-                              >
-                                <Database size={14} />
-                                <span>نسخ البيانات والمزامنة</span>
-                              </button>
-                            </div>
+      {/* 3. Devices Management Option */}
+      <button
+        type="button"
+        onClick={() => {
+          setAdvancedTab('devices');
+          setActiveAdvancedManagementModal('devices');
+        }}
+        className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-indigo-500/30 rounded-2xl transition-all group text-right shadow-lg cursor-pointer mx-4 md:mx-0"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
+            <Cpu size={22} />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-base">إدارة الأجهزة المعتمدة</h3>
+            <p className="text-xs text-gray-400 mt-1">الأجهزة المرتبطة بحسابك وصلاحيات الدخول والمزامنة</p>
+          </div>
+        </div>
+        <ChevronLeft size={20} className="text-gray-500 group-hover:text-white group-hover:translate-x-[-4px] transition-all" />
+      </button>
+    </div>
 
-                            {/* Inner Content Area */}
-                            <div className="md:col-span-3">
-                              {advancedDbView === 'list' ? (
-                                <div className="space-y-6">
-                                  {advancedDbSubTab === 'sync' ? (
-                                    <div className="space-y-6 animate-in fade-in duration-200">
+    {/* Modals for advanced-management options */}
+    <AnimatePresence>
+      {activeAdvancedManagementModal !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-[#1a1a1a] w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-5xl sm:rounded-[2rem] border border-white/10 shadow-2xl flex flex-col p-4 md:p-6 overflow-hidden"
+            dir="rtl"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6 shrink-0">
+              <h3 className="text-lg font-black text-white flex items-center gap-2">
+                {activeAdvancedManagementModal === 'database-sync' && <RefreshCw className="text-indigo-500" size={20} />}
+                {activeAdvancedManagementModal === 'database-backup' && <Database className="text-indigo-500" size={20} />}
+                {activeAdvancedManagementModal === 'devices' && <Cpu className="text-indigo-500" size={20} />}
+                {activeAdvancedManagementModal === 'database-sync' && 'قاعدة البيانات والمزامنة'}
+                {activeAdvancedManagementModal === 'database-backup' && 'نسخ البيانات والمزامنة'}
+                {activeAdvancedManagementModal === 'devices' && 'إدارة الأجهزة المعتمدة'}
+              </h3>
+              <button
+                onClick={() => setActiveAdvancedManagementModal(null)}
+                className="p-2 hover:bg-white/10 rounded-xl transition-all cursor-pointer"
+              >
+                <X size={20} className="text-gray-400 hover:text-white" />
+              </button>
+            </div>
+
+            {/* Modal Content container */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {activeAdvancedManagementModal === 'database-sync' && (
+                <div className="animate-in fade-in duration-200">
+                  <div className="space-y-6 animate-in fade-in duration-200">
                             {/* Three Database Mode Selector Boxes at the Very Top */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <button
@@ -2727,8 +2754,12 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                           )}
                         </div>
                         </div>
-                        ) : (
-                          <div className="space-y-6 animate-in fade-in duration-200">
+                </div>
+              )}
+              {activeAdvancedManagementModal === 'database-backup' && (
+                <div className="animate-in fade-in duration-200">
+                  {advancedDbView === 'list' ? (
+                    <div className="space-y-6 animate-in fade-in duration-200">
                             {/* 3. Maintenance Tools Grid */}
                             <div className="p-5 md:p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
                           <h4 className="font-bold text-white text-sm">أدوات الصيانة والنسخ الاحتياطي</h4>
@@ -2847,10 +2878,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                           </div>
                         </div>
                         </div>
-                        )}
-                            </div>
-                          ) : (
-                            <motion.div
+                  ) : (
+                    <motion.div
                               initial={{ opacity: 0, x: 20 }}
                               animate={{ opacity: 1, x: 0 }}
                               className="space-y-4"
@@ -3175,14 +3204,21 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                           </section>
                         )}
                             </motion.div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    </div>
-                  </div>
+                  )}
                 </div>
-                )}
+              )}
+              {activeAdvancedManagementModal === 'devices' && (
+                <div className="animate-in fade-in duration-200 h-full">
+                  <DeviceManagement user={user} onBack={() => setActiveAdvancedManagementModal(null)} shopConfig={shopConfig} />
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  </div>
+)}
                   </>
                 )}
               </div>

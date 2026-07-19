@@ -352,6 +352,56 @@ class LocalDatabase {
         console.error('Failed to create outbox table', err);
       }
 
+      
+      // Ensure financial tables are created for existing databases
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS fin_transaction_types (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            type TEXT
+          );
+        `);
+      } catch (err) {}
+      
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS fin_funds (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            type TEXT,
+            currency TEXT,
+            description TEXT,
+            status TEXT,
+            balance REAL,
+            bankAccount TEXT
+          );
+        `);
+      } catch (err) {}
+      
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS fin_currencies (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            symbol TEXT,
+            decimals INTEGER,
+            status TEXT
+          );
+        `);
+      } catch (err) {}
+      
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS fin_payment_methods (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            description TEXT,
+            status TEXT
+          );
+        `);
+      } catch (err) {}
+
       // Attempt to add extra financial columns to existing vault_transactions table if needed
       try {
         await this.db.run('ALTER TABLE vault_transactions ADD COLUMN voucherNumber INTEGER');

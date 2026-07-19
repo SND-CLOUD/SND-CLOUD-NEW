@@ -30,6 +30,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { User } from '../types';
+import { useBackHandler } from '../hooks/useBackHandler';
 import { usePermissions } from '../hooks/usePermissions';
 import ReportActions from './ReportActions';
 
@@ -173,6 +174,9 @@ export default function Reports({ user, onBack }: { user: User; onBack?: () => v
   const [inShopFilter, setInShopFilter] = useState<string>('all');
   const [deliveredFilter, setDeliveredFilter] = useState<string>('all');
   
+
+  useBackHandler(activeSubView !== 'none', () => setActiveSubView('none'));
+
   // Raw and filtered items cache for the table
   const [rawItems, setRawItems] = useState<any[]>([]);
   const [filteredPeriodItems, setFilteredPeriodItems] = useState<any[]>([]);

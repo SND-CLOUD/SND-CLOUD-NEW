@@ -123,6 +123,12 @@ export default function App() {
   useEffect(() => {
     const handleBackButton = async ({ canGoBack }: { canGoBack: boolean }) => {
       const state = stateRefs.current;
+
+      const handlers = (window as any).backHandlers || [];
+      if (handlers.length > 0) {
+        const topHandler = handlers[handlers.length - 1];
+        if (topHandler()) return;
+      }
       
       if (!state.user || state.showSetup) {
         if (confirm("هل تريد الخروج من البرنامج؟")) {
@@ -601,6 +607,12 @@ export default function App() {
                   return (
                     <button 
                       onClick={() => {
+                        const handlers = (window as any).backHandlers || [];
+                        if (handlers.length > 0) {
+                          const topHandler = handlers[handlers.length - 1];
+                          if (topHandler()) return;
+                        }
+
                         if (activeTab === 'device-movement' && movementView !== 'hub') {
                           setMovementView('hub');
                         } else if (activeTab === 'entry-exit' && entryExitView !== 'hub') {

@@ -32,7 +32,7 @@ export default function AddCustomerModal({
   const [addPhone2, setAddPhone2] = useState('');
   const [addEmail, setAddEmail] = useState('');
   const [addNotes, setAddNotes] = useState('');
-  const [addHasWhatsapp, setAddHasWhatsapp] = useState(true);
+  const [addHasWhatsapp, setAddHasWhatsapp] = useState(false);
   const [isAddingInProcess, setIsAddingInProcess] = useState(false);
   const [availableCurrencies, setAvailableCurrencies] = useState<{ id: string, name: string }[]>([]);
 
@@ -40,6 +40,7 @@ export default function AddCustomerModal({
     if (isOpen) {
       setAddName(initialName);
       setAddPhone1(initialPhone);
+      setAddHasWhatsapp(false);
       
       const fetchCurrencies = async () => {
         try {
@@ -114,6 +115,7 @@ export default function AddCustomerModal({
       setAddPhone2('');
       setAddEmail('');
       setAddNotes('');
+      setAddHasWhatsapp(false);
     } catch (err) {
       console.error("Error adding customer:", err);
     } finally {

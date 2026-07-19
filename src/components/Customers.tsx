@@ -8,6 +8,7 @@ import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, updateDoc,
 import { db } from '../firebase';
 import { User, Phone, Smartphone, AlertTriangle, CheckCircle, Package, ArrowLeft, ArrowUpRight, ArrowRight, LogOut, Search, FileText, ChevronLeft, Eye, Clock, DollarSign, X, Users, ArrowUpDown, Plus, Edit2, Check, Building, Mail, Printer, UserPlus, MessageCircle, MapPin, Facebook } from 'lucide-react';
 import { Customer, Invoice, InvoiceItem, User as SystemUser, ShopConfig } from '../types';
+import { useBackHandler } from '../hooks/useBackHandler';
 import { usePermissions } from '../hooks/usePermissions';
 import BankAccountsFooter from './BankAccountsFooter';
 import { useTranslation } from 'react-i18next';
@@ -79,6 +80,25 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
   const [editHasWhatsapp, setEditHasWhatsapp] = useState(true);
   const [editLiabilityCurrency, setEditLiabilityCurrency] = useState('USD');
   const [isSavingInProcess, setIsSavingInProcess] = useState(false);
+
+
+  useBackHandler(showAddCustomer, () => setShowAddCustomer(false));
+  useBackHandler(showLogModal, () => {
+    if (selectedLogInvoice) {
+      setSelectedLogInvoice(null);
+    } else {
+      setShowLogModal(false);
+    }
+  });
+  useBackHandler(showDetailsModal, () => setShowDetailsModal(false));
+  useBackHandler(isEditingMode, () => setIsEditingMode(false));
+  useBackHandler(selectedCustomer !== null && !showAddCustomer && !showLogModal && !showDetailsModal && !isEditingMode, () => {
+    if (activeCustomerTab !== 'menu') {
+      setActiveCustomerTab('menu');
+    } else {
+      setSelectedCustomer(null);
+    }
+  });
 
   const nextCustomerNumber = Math.max(0, ...customers.map(c => Number(c.customerNumber) || 0)) + 1;
 

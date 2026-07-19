@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import PrintPreviewOverlay from './PrintPreviewOverlay';
+import { useBackHandler } from '../hooks/useBackHandler';
 
 export default function SearchInvoice({ onBack, user }: { onBack?: () => void, user: any }) {
   const { t } = useTranslation();
@@ -356,6 +357,9 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
 
   // Print overlay state
   const [previewData, setPreviewData] = useState<{type: 'invoice' | 'voucher' | 'statement' | 'table', data: any} | null>(null);
+
+  useBackHandler(previewData !== null, () => setPreviewData(null));
+
 
   useEffect(() => {
     setLoading(true);
