@@ -27,12 +27,14 @@ import {
   ArrowRight,
   AlertTriangle,
   MessageCircle,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { collection, query, where, getDocs, addDoc, doc, getDoc, setDoc, onSnapshot, writeBatch } from './firebase';
 import { db } from './firebase';
 import { User, ShopConfig } from './types';
 import { openWhatsApp, sendUniversalReminder } from './lib/shareHelper';
+import { ProviderFactory } from './data/ProviderFactory';
 
 // Components
 import Dashboard from './components/Dashboard';
@@ -82,6 +84,19 @@ export default function App() {
   const [settleInvoice, setSettleInvoice] = useState<any | null>(null);
   const [settleAmount, setSettleAmount] = useState<string>('');
   const [isSettling, setIsSettling] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsSyncingAll(true);
+    try {
+      const { SyncEngine } = await import('./data/SyncEngine');
+      await SyncEngine.syncAll();
+    } catch (e) {
+      console.error("Manual sync failed:", e);
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
 
   const stateRefs = useRef({
     activeTab,
@@ -629,6 +644,25 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 md:gap-4">
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncingAll}
+                className={`p-2 rounded-xl transition-all relative border mr-1 cursor-pointer flex items-center justify-center disabled:opacity-50 ${
+                  ProviderFactory.getMode() === 'CLOUD' 
+                    ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 border-blue-500/20'
+                    : ProviderFactory.getMode() === 'LOCAL'
+                      ? 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border-orange-500/20'
+                      : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border-emerald-500/20'
+                }`}
+                title={
+                  ProviderFactory.getMode() === 'CLOUD' ? 'مزامنة البيانات (سحابي)'
+                  : ProviderFactory.getMode() === 'LOCAL' ? 'مزامنة البيانات (محلي)'
+                  : 'مزامنة البيانات (تلقائي)'
+                }
+              >
+                <RefreshCw size={18} className={isSyncingAll ? "animate-spin" : ""} />
+              </button>
+
               {activeAlerts.length > 0 && (
                 <button
                   onClick={() => setShowAllAlertsModal(true)}
