@@ -3,6 +3,8 @@ import { db } from '../firebase';
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, updateDoc, deleteDoc, addDoc, serverTimestamp } from '../firebase';
 import { Save, RefreshCw, Smartphone, Database, Languages, LogOut, Shield, Fingerprint, Lock, Clock, HardDrive, Download, Archive, Upload, RotateCcw, FileText, User as UserIcon, Tag, X, Cpu, Calculator, ArrowLeft, ArrowRight, Edit, Phone, Mail, Facebook, MapPin, Store, ChevronLeft, Globe, Settings as SettingsIcon, CheckCircle, XCircle } from 'lucide-react';
 import { localDb } from '../lib/local-db';
+import { FirebaseProviderInstance } from '../data/FirebaseProvider';
+import { LocalProviderInstance } from '../data/LocalProvider';
 import { User, ShopConfig } from '../types';
 import UserManagement from './UserManagement';
 import EngineersTable from './EngineersTable';
@@ -21,6 +23,7 @@ import { useBackHandler } from '../hooks/useBackHandler';
 export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignOut }: { user: User, shopConfig: ShopConfig | null, onShopConfigUpdate?: (config: any) => void, onSignOut?: () => void }) {
   const { t, i18n } = useTranslation();
   const { hasPermission } = usePermissions(user);
+  const hasHybridDbPermission = user.role === 'admin' || user.role === 'manager' || !!user.permissions?.settings_hybrid_db?.view;
 
   const canShowCategory = (catId: string) => {
     if (catId === 'general' || catId === 'security') return true;
@@ -52,6 +55,11 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   
   // Database configuration states
   const [dbMode, setDbMode] = useState<'LOCAL' | 'CLOUD' | 'AUTO'>('LOCAL');
+  const [hybridDbType, setHybridDbType] = useState<'none' | 'CLOUD' | 'LOCAL'>('none');
+  const [preciseResetLoading, setPreciseResetLoading] = useState(false);
+  const [dataTransferLoading, setDataTransferLoading] = useState(false);
+  const [hybridResult, setHybridResult] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
+  const [showHybridAdvancedModal, setShowHybridAdvancedModal] = useState(false);
   const [activeProvider, setActiveProvider] = useState<'LOCAL' | 'CLOUD'>('LOCAL');
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
@@ -853,6 +861,334 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         setSaving(false);
         setProgress({ active: false, value: 0, label: '' });
         setResetStatus({ type: 'error', message: 'حدث خطأ غير متوقع أثناء تهيئة النظام: ' + (e.message || e) });
+    }
+  };
+
+  const handlePreciseReset = async () => {
+    if (hybridDbType === 'none') return;
+    
+    setPreciseResetLoading(true);
+    setHybridResult({ type: null, message: '' });
+    
+    const targetIsCloud = hybridDbType === 'CLOUD';
+    const dbLabel = targetIsCloud ? 'السحابية' : 'المحلية';
+    
+    setProgress({ active: true, value: 5, label: `جاري التهيئة الدقيقة للقاعدة ${dbLabel}...` });
+
+    const failures: string[] = [];
+
+    try {
+      const mainTables = [
+        'invoices', 'invoice_items', 'customers', 'maintenance_actions', 
+        'approval_actions', 'vault_transactions', 'inventory_items', 'document_outputs'
+      ];
+      const categoryTables = ['device_categories', 'device_models'];
+      const engineerTables = ['engineers'];
+      const shopTables = ['company_details', 'settings'];
+      const financialTables = ['fin_transaction_types', 'fin_funds', 'fin_currencies', 'fin_payment_methods'];
+
+      const allTables = [...mainTables, ...categoryTables, ...engineerTables, ...shopTables, ...financialTables];
+
+      if (targetIsCloud) {
+        // 1. Clear CLOUD tables
+        let idx = 0;
+        for (const table of allTables) {
+          idx++;
+          const percent = Math.round(5 + (idx / allTables.length) * 60);
+          setProgress({ active: true, value: percent, label: `جاري مسح السحاب: ${table}...` });
+          
+          if (table === 'users') continue; // Handled separately
+
+          try {
+            const snap = await FirebaseProviderInstance.getDocs(table);
+            for (const docSnap of snap.docs) {
+              await FirebaseProviderInstance.deleteDoc(table, docSnap.id);
+            }
+          } catch (e: any) {
+            console.error(`Error clearing Firestore table ${table}:`, e);
+            failures.push(`جدول ${table}: ${e.message || e}`);
+          }
+        }
+
+        // Re-create settings/app in CLOUD
+        setProgress({ active: true, value: 75, label: 'جاري إعادة ضبط العدادات في السحاب...' });
+        try {
+          await FirebaseProviderInstance.setDoc('settings', 'app', { 
+            lastInvoiceNumber: 0, 
+            lastCustomerNumber: 0
+          });
+        } catch (e: any) {
+          console.error('Failed to reset app settings in Firestore:', e);
+          failures.push(`إعادة تعيين العدادات: ${e.message || e}`);
+        }
+
+        // Clear users except primary admin in CLOUD
+        setProgress({ active: true, value: 85, label: 'جاري تهيئة حسابات المستخدمين في السحاب...' });
+        try {
+          const usersSnap = await FirebaseProviderInstance.getDocs('users');
+          for (const docSnap of usersSnap.docs) {
+            if (docSnap.id === 'primary-admin') {
+              await FirebaseProviderInstance.setDoc('users', 'primary-admin', {
+                id: 'primary-admin',
+                username: 'admin',
+                password: 'admin',
+                name: 'المدير العام',
+                role: 'admin',
+                isPrimary: true,
+                userNumber: 100,
+                isActive: true
+              });
+            } else {
+              await FirebaseProviderInstance.deleteDoc('users', docSnap.id);
+            }
+          }
+        } catch (e: any) {
+          console.error('Failed to reset users in Firestore:', e);
+          failures.push(`تهيئة المستخدمين: ${e.message || e}`);
+        }
+
+      } else {
+        // 2. Clear LOCAL tables
+        let idx = 0;
+        for (const table of allTables) {
+          idx++;
+          const percent = Math.round(5 + (idx / allTables.length) * 60);
+          setProgress({ active: true, value: percent, label: `جاري مسح جدول المحلي: ${table}...` });
+          
+          if (table === 'users') continue; // Handled separately
+
+          try {
+            await localDb.run(`DELETE FROM ${table}`);
+          } catch (e: any) {
+            console.error(`Error clearing SQLite table ${table}:`, e);
+            failures.push(`جدول ${table}: ${e.message || e}`);
+          }
+        }
+
+        // Clear users except primary admin in LOCAL
+        setProgress({ active: true, value: 75, label: 'جاري تهيئة حسابات المستخدمين في المحلي...' });
+        try {
+          await localDb.run(`DELETE FROM users`);
+          await localDb.run(`INSERT INTO users (id, username, password, name, role, isPrimary, userNumber, isActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+            ['primary-admin', 'admin', 'admin', 'المدير العام', 'admin', 1, 100, 1]);
+        } catch (e: any) {
+          console.error(`Error resetting users in SQLite:`, e);
+          failures.push(`تهيئة المستخدمين: ${e.message || e}`);
+        }
+
+        // Reset local funds balances
+        setProgress({ active: true, value: 85, label: 'جاري إعادة تعيين الخزائن...' });
+        try {
+          await localDb.run(`UPDATE fin_funds SET balance = 0`);
+        } catch (e: any) {
+          console.error('Error resetting funds balances in SQLite:', e);
+          failures.push(`إعادة تعيين الخزائن: ${e.message || e}`);
+        }
+      }
+
+      // Common final tasks
+      setProgress({ active: true, value: 95, label: 'جاري إنهاء العملية...' });
+      localStorage.removeItem('snd_has_bio_credentials');
+      localStorage.removeItem('snd_bio_credentials');
+      localStorage.setItem('snd_db_seeded', 'true');
+      sessionStorage.removeItem('alertsClosed');
+      sessionStorage.removeItem('snd_user');
+
+      setProgress({ active: false, value: 100, label: '' });
+      setPreciseResetLoading(false);
+      
+      if (failures.length > 0) {
+        setHybridResult({ 
+          type: 'error', 
+          message: `حدثت بعض الأخطاء أثناء التهيئة الدقيقة لـ ${dbLabel}:\n` + failures.join('\n')
+        });
+      } else {
+        setHybridResult({ 
+          type: 'success', 
+          message: `تمت التهيئة الدقيقة لجميع جداول ومكونات القاعدة ${dbLabel} بنجاح! سيتم إعادة تحميل التطبيق تلقائياً بعد ثانيتين...` 
+        });
+        
+        setTimeout(() => {
+          window.location.reload();
+        }, 2500);
+      }
+
+    } catch (error: any) {
+      console.error('Error during precise reset:', error);
+      setProgress({ active: false, value: 0, label: '' });
+      setPreciseResetLoading(false);
+      setHybridResult({ 
+        type: 'error', 
+        message: `فشلت التهيئة الدقيقة: ${error.message || error}` 
+      });
+    }
+  };
+
+  const handleTransferData = async () => {
+    if (hybridDbType === 'none') return;
+    
+    setDataTransferLoading(true);
+    setHybridResult({ type: null, message: '' });
+    setProgress({ active: true, value: 5, label: 'جاري بدء عملية نقل البيانات...' });
+
+    const failures: string[] = [];
+
+    try {
+      const tables = [
+        'company_details',
+        'customers',
+        'invoices',
+        'invoice_items',
+        'vault_transactions',
+        'maintenance_actions',
+        'device_categories',
+        'device_models',
+        'approval_actions',
+        'settings',
+        'users',
+        'engineers',
+        'inventory_items',
+        'fin_transaction_types',
+        'fin_funds',
+        'fin_currencies',
+        'fin_payment_methods',
+        'document_outputs'
+      ];
+
+      const sourceIsCloud = hybridDbType === 'CLOUD';
+      const sourceLabel = sourceIsCloud ? 'السحابية' : 'المحلية';
+      const destLabel = sourceIsCloud ? 'المحلية' : 'السحابية';
+
+      // 0. Check if source database has any user/business data
+      setProgress({ active: true, value: 3, label: `جاري التحقق من وجود بيانات في القاعدة المصدر (${sourceLabel})...` });
+      const businessTables = [
+        'company_details',
+        'customers',
+        'invoices',
+        'invoice_items',
+        'vault_transactions',
+        'maintenance_actions',
+        'device_categories',
+        'device_models',
+        'approval_actions',
+        'engineers',
+        'inventory_items',
+        'document_outputs'
+      ];
+
+      let totalBusinessRecords = 0;
+      for (const table of businessTables) {
+        try {
+          if (sourceIsCloud) {
+            const snap = await FirebaseProviderInstance.getDocs(table);
+            totalBusinessRecords += snap.docs.length;
+          } else {
+            const snap = await LocalProviderInstance.getDocs(table);
+            totalBusinessRecords += snap.docs.length;
+          }
+        } catch (e) {
+          console.warn(`Error checking if source table ${table} is empty:`, e);
+        }
+      }
+
+      if (totalBusinessRecords === 0) {
+        setProgress({ active: false, value: 0, label: '' });
+        setDataTransferLoading(false);
+        setHybridResult({ 
+          type: 'error', 
+          message: `عذراً، قاعدة البيانات المصدر (${sourceLabel}) فارغة تماماً ولا تحتوي على أي بيانات أو فواتير أو عملاء لنقلها!` 
+        });
+        return;
+      }
+
+      let tableIdx = 0;
+      for (const table of tables) {
+        tableIdx++;
+        const percent = Math.round(5 + (tableIdx / tables.length) * 90);
+        setProgress({ 
+          active: true, 
+          value: percent, 
+          label: `جاري نقل جدول ${table} من القاعدة ${sourceLabel} إلى ${destLabel}...` 
+        });
+
+        // 1. Fetch from source
+        let records: any[] = [];
+        try {
+          if (sourceIsCloud) {
+            const snap = await FirebaseProviderInstance.getDocs(table);
+            records = snap.docs.map((d: any) => d.data());
+          } else {
+            const snap = await LocalProviderInstance.getDocs(table);
+            records = snap.docs.map((d: any) => d.data());
+          }
+        } catch (e: any) {
+          console.error(`Error reading table ${table} from source ${sourceLabel}:`, e);
+          failures.push(`فشل قراءة جدول ${table}: ${e.message || e}`);
+          continue; // Skip copying if read failed
+        }
+
+        // 2. Clear destination table first so we don't merge old with new!
+        if (sourceIsCloud) {
+          // Destination is LOCAL: Clear local SQLite table
+          try {
+            await localDb.run(`DELETE FROM ${table}`);
+          } catch (e: any) {
+            console.error(`Error clearing local table ${table} before transfer:`, e);
+            failures.push(`فشل تصفير جدول المحلي ${table}: ${e.message || e}`);
+          }
+        } else {
+          // Destination is CLOUD: Clear Firestore collection
+          try {
+            const targetSnap = await FirebaseProviderInstance.getDocs(table);
+            for (const docSnap of targetSnap.docs) {
+              await FirebaseProviderInstance.deleteDoc(table, docSnap.id);
+            }
+          } catch (e: any) {
+            console.error(`Error clearing cloud table ${table} before transfer:`, e);
+            failures.push(`فشل تصفير جدول السحاب ${table}: ${e.message || e}`);
+          }
+        }
+
+        // 3. Write records to destination
+        for (const record of records) {
+          if (!record || !record.id) continue;
+          try {
+            if (sourceIsCloud) {
+              // CLOUD -> LOCAL: Bypass outbox queuing to prevent loop
+              await LocalProviderInstance.setDoc(table, record.id, record, undefined, 'BYPASS_OUTBOX');
+            } else {
+              // LOCAL -> CLOUD
+              await FirebaseProviderInstance.setDoc(table, record.id, record);
+            }
+          } catch (e: any) {
+            console.error(`Error writing record to destination table ${table}:`, e);
+            failures.push(`فشل كتابة سجل في جدول ${table}: ${e.message || e}`);
+          }
+        }
+      }
+
+      setProgress({ active: false, value: 100, label: '' });
+      setDataTransferLoading(false);
+
+      if (failures.length > 0) {
+        setHybridResult({ 
+          type: 'error', 
+          message: `اكتملت عملية نقل البيانات مع وجود بعض المشاكل:\n` + failures.slice(0, 10).join('\n') + (failures.length > 10 ? '\n...وغيرها' : '')
+        });
+      } else {
+        setHybridResult({ 
+          type: 'success', 
+          message: `تم بنجاح نقل كافة البيانات من القاعدة ${sourceLabel} إلى القاعدة ${destLabel} وتحديث جميع السجلات بشكل متطابق ونظيف!` 
+        });
+      }
+    } catch (error: any) {
+      console.error('Error during data transfer:', error);
+      setProgress({ active: false, value: 0, label: '' });
+      setDataTransferLoading(false);
+      setHybridResult({ 
+        type: 'error', 
+        message: `فشلت عملية نقل البيانات: ${error.message || error}` 
+      });
     }
   };
 
@@ -2752,6 +3088,31 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                               {syncResult.message}
                             </div>
                           )}
+
+                          {/* 3. Hybrid Advanced Actions Button (Visible only in AUTO mode to users with permission) */}
+                          {dbMode === 'AUTO' && hasHybridDbPermission && (
+                            <div className="mt-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setHybridResult({ type: null, message: '' });
+                                  setShowHybridAdvancedModal(true);
+                                }}
+                                className="w-full flex items-center justify-between p-4 bg-orange-600/10 hover:bg-orange-600/20 border border-orange-500/25 hover:border-orange-500/40 rounded-2xl transition-all font-cairo cursor-pointer group text-right"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 bg-orange-500 text-white rounded-xl shadow-[0_0_12px_rgba(249,115,22,0.3)] group-hover:scale-105 transition-transform">
+                                    <Cpu size={18} />
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="block text-sm font-bold text-white">صندوق التحكم المتقدم بالوضع الهجين</span>
+                                    <span className="block text-[10px] text-gray-400 mt-0.5">إدارة التهيئة الدقيقة ونقل البيانات بين القواعد السحابية والمحلية</span>
+                                  </div>
+                                </div>
+                                <ChevronLeft size={18} className="text-orange-500 group-hover:-translate-x-1 transition-transform" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                         </div>
                 </div>
@@ -3322,6 +3683,143 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                   حسناً
                 </button>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Hybrid Advanced Control Toolbox Modal */}
+        {showHybridAdvancedModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            dir="rtl"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-[#161616] w-full max-w-2xl rounded-[2.5rem] border border-orange-500/20 shadow-2xl overflow-hidden font-cairo flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-6 md:p-8 border-b border-white/5 bg-[#1a1a1a] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-orange-600/15 text-orange-500 rounded-2xl">
+                    <Cpu size={24} className="animate-pulse" />
+                  </div>
+                  <div className="text-right">
+                    <h3 className="font-black text-white text-lg font-cairo">صندوق التحكم المتقدم بالوضع الهجين</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">التهيئة الدقيقة ونقل البيانات بين القواعد السحابية والمحلية</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHybridAdvancedModal(false)}
+                  className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
+                {/* Select Database */}
+                <div className="p-4 md:p-5 bg-white/5 rounded-2xl space-y-2 text-right">
+                  <label className="text-xs font-bold text-gray-300 block">حدد نوع قاعدة البيانات المستهدفة كـ (القاعدة 1):</label>
+                  <select
+                    value={hybridDbType}
+                    onChange={(e) => {
+                      setHybridDbType(e.target.value as 'none' | 'CLOUD' | 'LOCAL');
+                      setHybridResult({ type: null, message: '' });
+                    }}
+                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white focus:border-orange-500 outline-none transition-all font-cairo text-right"
+                  >
+                    <option value="none">حدد نوع القاعدة</option>
+                    <option value="CLOUD">قاعدة بيانات سحابية (CLOUD)</option>
+                    <option value="LOCAL">قاعدة بيانات محلية (LOCAL)</option>
+                  </select>
+                </div>
+
+                {/* Actions Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Action 1: Precise Reset */}
+                  <div className="flex flex-col gap-3 p-5 bg-red-500/5 rounded-3xl border border-red-500/10 hover:border-red-500/20 transition-all text-right">
+                    <div className="flex-1 space-y-1">
+                      <span className="block text-sm font-black text-red-500">التهيئة الدقيقة للبيانات</span>
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        {hybridDbType === 'none' 
+                          ? 'يرجى تحديد نوع قاعدة البيانات لتفعيل التهيئة.'
+                          : hybridDbType === 'CLOUD'
+                          ? 'سيتم حذف الفواتير، العملاء، التصنيفات، المهندسين، تفاصيل المحل، الحسابات الإضافية وتصفير العدادات تماماً من السحابة.'
+                          : 'سيتم حذف الفواتير، العملاء، التصنيفات، المهندسين، تفاصيل المحل وتصفير أرصدة الخزائن تماماً من قاعدة البيانات المحلية.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePreciseReset}
+                      disabled={hybridDbType === 'none' || preciseResetLoading}
+                      className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:hover:bg-red-600 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md font-cairo mt-2"
+                    >
+                      {preciseResetLoading ? <RefreshCw size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      تهيئة دقيقة
+                    </button>
+                  </div>
+
+                  {/* Action 2: Transfer Data */}
+                  <div className="flex flex-col gap-3 p-5 bg-orange-600/5 rounded-3xl border border-orange-500/10 hover:border-orange-500/20 transition-all text-right">
+                    <div className="flex-1 space-y-1">
+                      <span className="block text-sm font-black text-orange-500">نقل ومزامنة البيانات</span>
+                      <p className="text-xs text-gray-400 leading-relaxed">
+                        {hybridDbType === 'none'
+                          ? 'يرجى تحديد نوع قاعدة البيانات لتفعيل نقل البيانات.'
+                          : hybridDbType === 'CLOUD'
+                          ? 'سيتم نقل كافة السجلات ومحتويات الجداول بالكامل من السحابة (القاعدة 1) إلى قاعدة البيانات المحلية (القاعدة 2).'
+                          : 'سيتم نقل كافة السجلات ومحتويات الجداول بالكامل من المحلية (القاعدة 1) إلى السحابية (القاعدة 2).'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleTransferData}
+                      disabled={hybridDbType === 'none' || dataTransferLoading}
+                      className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-30 disabled:hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md font-cairo mt-2"
+                    >
+                      {dataTransferLoading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+                      نقل البيانات
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress Indicators inside the Modal */}
+                {(preciseResetLoading || dataTransferLoading) && (
+                  <div className="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl flex items-center justify-center gap-3 text-orange-500 text-xs font-bold font-cairo">
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>جاري معالجة العملية الجارية... يرجى عدم إغلاق هذه النافذة.</span>
+                  </div>
+                )}
+
+                {/* Status Result Message */}
+                {hybridResult.type && (
+                  <div className={`p-4 md:p-5 rounded-2xl text-xs font-bold border text-right font-cairo leading-relaxed ${
+                    hybridResult.type === 'success' 
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/25 shadow-[0_0_15px_rgba(16,185,129,0.05)]' 
+                      : 'bg-rose-500/10 text-rose-500 border-rose-500/25 shadow-[0_0_15px_rgba(239,68,68,0.05)]'
+                  }`}>
+                    {hybridResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 md:p-6 bg-[#1a1a1a] border-t border-white/5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowHybridAdvancedModal(false)}
+                  className="bg-white/5 hover:bg-white/10 text-white font-bold py-2.5 px-6 rounded-xl text-xs font-cairo transition-all cursor-pointer"
+                >
+                  إغلاق النافذة
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

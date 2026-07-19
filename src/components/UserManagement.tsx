@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, setDoc, where, getDocs } from '../firebase';
 import { db } from '../firebase';
 import { User, AppPermissions } from '../types';
-import { ShieldCheck, UserPlus, Trash2, Edit2, ShieldAlert, Loader2, Save, X, ArrowLeft, Check, Lock, Package, Wallet, Users, FileText, BarChart, Settings, UserCircle, Cpu, UserCheck, UserX, Eye, EyeOff, Power } from 'lucide-react';
+import { ShieldCheck, UserPlus, Trash2, Edit2, ShieldAlert, Loader2, Save, X, ArrowLeft, Check, Lock, Package, Wallet, Users, FileText, BarChart, Settings, UserCircle, Cpu, UserCheck, UserX, Eye, EyeOff, Power, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 
@@ -33,7 +33,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     settings_main_data: { view: false, add: false, edit: false, delete: false, print: false },
     settings_devices_engineers: { view: false, add: false, edit: false, delete: false, print: false },
     settings_device_management: { view: false, add: false, edit: false, delete: false, print: false },
-    settings_users: { view: false, add: false, edit: false, delete: false, print: false }
+    settings_users: { view: false, add: false, edit: false, delete: false, print: false },
+    settings_hybrid_db: { view: false, edit: false }
   };
 
   const [formData, setFormData] = useState<Partial<User>>({ 
@@ -107,7 +108,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       'settings_main_data',
       'settings_devices_engineers',
       'settings_device_management',
-      'settings_users'
+      'settings_users',
+      'settings_hybrid_db'
     ];
     
     let allSelected = true;
@@ -159,7 +161,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     settings_main_data: { label: 'اعداد بيانات رئيسية', icon: Settings },
     settings_devices_engineers: { label: 'اعداد أجهزة ومهندسين', icon: Cpu },
     settings_device_management: { label: 'اعداد إدارة أجهزة', icon: Settings },
-    settings_users: { label: 'اعداد مستخدمون', icon: Users }
+    settings_users: { label: 'اعداد مستخدمون', icon: Users },
+    settings_hybrid_db: { label: 'التحكم المتقدم بالوضع الهجين', icon: Database }
   };
 
   const PERMISSIONS_ORDER = ['view', 'add', 'edit', 'delete', 'print'];
@@ -183,7 +186,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       'settings_main_data',
       'settings_devices_engineers',
       'settings_device_management',
-      'settings_users'
+      'settings_users',
+      'settings_hybrid_db'
     ];
     
     return (

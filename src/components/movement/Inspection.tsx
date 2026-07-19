@@ -95,7 +95,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
     if (initialInvoice && items.length > 0 && !selectedInvoice) {
       if (initialInvoice.status === '10' || initialInvoice.status === 'new') {
         setSubTab('new_devices');
-      } else if (initialInvoice.status === '20') {
+      } else if (initialInvoice.status === '20' || initialInvoice.status === '25') {
         setSubTab('under_inspection');
         openInvoice(initialInvoice);
       } else if (initialInvoice.status === '21') {
@@ -143,7 +143,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
   const countPhase2Devices = items.filter(i => i.status === '22').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   const countPhasedDevices = countPhase1Devices + countPhase2Devices;
 
-  const countInspectionDevices = items.filter(i => i.status === '20' || i.status === 'testing' || i.status === 'inspected').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) + countPhasedDevices;
+  const countInspectionDevices = items.filter(i => i.status === '20' || i.status === '25' || i.status === 'testing' || i.status === 'inspected').reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) + countPhasedDevices;
 
   const newInvoicesFiltered = invoices.filter(inv => {
     return items.some(item => item.invoiceNumber === inv.invoiceNumber && (item.status === '10' || item.status === 'new') && item.quantity > 0);
@@ -153,7 +153,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
   ).sort((a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber));
 
   const pendingInvoicesFiltered = invoices.filter(inv => {
-    return items.some(item => item.invoiceNumber === inv.invoiceNumber && item.status === '20' && item.quantity > 0);
+    return items.some(item => item.invoiceNumber === inv.invoiceNumber && (item.status === '20' || item.status === '25') && item.quantity > 0);
   }).filter(inv => 
     (inv.customerName || '').toLowerCase().includes(search.toLowerCase()) || 
     (inv.invoiceNumber || '').includes(search)

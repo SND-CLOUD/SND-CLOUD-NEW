@@ -108,6 +108,7 @@ export interface AppPermissions {
   settings_devices_engineers: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
   settings_device_management: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
   settings_users: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
+  settings_hybrid_db?: { view: boolean; edit: boolean };
 }
 
 export interface User {
