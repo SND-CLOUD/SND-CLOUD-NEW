@@ -76,7 +76,23 @@ class LocalDatabase {
         await sqlite.initWebStore();
       }
 
-      this.db = await sqlite.createConnection('snd_system', false, 'no-encryption', 1, false);
+      try {
+        this.db = await sqlite.createConnection('snd_system', false, 'no-encryption', 1, false);
+      } catch (connErr: any) {
+        if (connErr?.message?.includes('already exists') || String(connErr).includes('already exists')) {
+          try {
+            this.db = await sqlite.retrieveConnection('snd_system', false);
+          } catch (retrievalErr) {
+            console.error('Failed to retrieve existing connection, attempting to close and retry', retrievalErr);
+            try {
+              await sqlite.closeConnection('snd_system', false);
+            } catch (closeErr) {}
+            this.db = await sqlite.createConnection('snd_system', false, 'no-encryption', 1, false);
+          }
+        } else {
+          throw connErr;
+        }
+      }
       await this.db.open();
       
       // Create Tables
@@ -125,7 +141,9 @@ class LocalDatabase {
           bankSarAccount TEXT,
           bankUsdName TEXT,
           bankUsdAccount TEXT,
-          bankHolderName TEXT
+          bankHolderName TEXT,
+          fiscalYear TEXT,
+          startDate TEXT
         );
 
         CREATE TABLE IF NOT EXISTS customers (
@@ -431,6 +449,10 @@ class LocalDatabase {
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN bankUsdName TEXT'); } catch (err) {}
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN bankUsdAccount TEXT'); } catch (err) {}
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN bankHolderName TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN liabilityCurrency TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN updatedAt TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN fiscalYear TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN startDate TEXT'); } catch (err) {}
 
       // Attempt to add notes column to existing invoices table if needed
       try {
@@ -845,6 +867,8 @@ class LocalDatabase {
 
     } catch (err) {
       console.error('SQLite initialization failed', err);
+      this.db = null;
+      this.initializingPromise = null;
     }
     })();
 

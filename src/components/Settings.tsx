@@ -2310,6 +2310,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                 setSaving(true);
                                 try {
                                   const updatedConfig = {
+                                    id: 'main_details',
                                     shopName: shopName.trim(),
                                     countryCode: countryCode.trim(),
                                     phone1: phone1.trim(),
@@ -2335,10 +2336,12 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                     bankUsdAccount: bankUsdAccount.trim(),
                                     bankHolderName: bankHolderName.trim(),
                                     fiscalYear: new Date().getFullYear().toString(),
-                                    startDate: new Date().toISOString().split('T')[0]
+                                    startDate: new Date().toISOString().split('T')[0],
+                                    updatedAt: new Date().toISOString()
                                   };
 
                                   await setDoc(doc(db, 'settings', 'shop'), updatedConfig, { merge: true });
+                                  await setDoc(doc(db, 'company_details', 'main_details'), updatedConfig, { merge: true });
                                   localStorage.setItem('snd_country_code', updatedConfig.countryCode);
 
                                   // Save/Sync to local SQLite table "company_details" as well
