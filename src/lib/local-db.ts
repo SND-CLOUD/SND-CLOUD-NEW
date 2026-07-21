@@ -891,7 +891,11 @@ class LocalDatabase {
   async query(sql: string, params: any[] = []) {
     return this.enqueue(async () => {
       if (!this.db) {
-        console.error('Database not initialized. Attempting recovery...');
+        if (this.initializingPromise) {
+          console.log('Database is currently initializing, waiting for connection...');
+        } else {
+          console.warn('Database connection not active. Initializing database...');
+        }
         await this.initialize();
       } else {
         try {
@@ -901,7 +905,7 @@ class LocalDatabase {
             await this.db.open();
           }
         } catch (err) {
-          console.error('Failed to verify/open database inside query:', err);
+          console.warn('Failed to verify/open database inside query:', err);
         }
       }
       if (!this.db) throw new Error('Failed to initialize local database connection.');
@@ -913,7 +917,11 @@ class LocalDatabase {
   async run(sql: string, params: any[] = []) {
     return this.enqueue(async () => {
       if (!this.db) {
-        console.error('Database not initialized. Attempting recovery...');
+        if (this.initializingPromise) {
+          console.log('Database is currently initializing, waiting for connection...');
+        } else {
+          console.warn('Database connection not active. Initializing database...');
+        }
         await this.initialize();
       } else {
         try {
@@ -923,7 +931,7 @@ class LocalDatabase {
             await this.db.open();
           }
         } catch (err) {
-          console.error('Failed to verify/open database inside run:', err);
+          console.warn('Failed to verify/open database inside run:', err);
         }
       }
       if (!this.db) throw new Error('Failed to initialize local database connection.');

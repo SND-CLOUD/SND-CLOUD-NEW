@@ -100,7 +100,6 @@ export default function AddCustomerModal({
       };
 
       batch.set(customerRef, newCustomerData);
-      batch.set(settingsRef, { lastCustomerNumber: sysNextNum }, { merge: true });
 
       await batch.commit();
 

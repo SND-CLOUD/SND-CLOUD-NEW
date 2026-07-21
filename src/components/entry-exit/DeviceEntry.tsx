@@ -105,24 +105,51 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
     localStorage.setItem('entry_visible_columns', JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
-  useEffect(() => {
-    // 1. App settings for real-time invoice number
-    const unsubscribeAppSettings = onSnapshot(doc(db, 'settings', 'app'), async (docSnap) => {
-      const data = docSnap.data();
-      let last = Number(data?.lastInvoiceNumber) || 0;
-      
+  const calculateNextInvoiceNumber = async (settingsData?: any) => {
+    let last = 0;
+    if (settingsData) {
+      last = Number(settingsData.lastInvoiceNumber) || 0;
+    } else {
       try {
-        const { localDb } = await import('../../lib/local-db');
-        const resNum = await localDb.query("SELECT COALESCE(MAX(CAST(invoiceNumber AS INTEGER)), 0) as maxNum FROM invoices WHERE invoiceNumber GLOB '*[0-9]*'");
-        if (resNum.values?.[0]?.maxNum) {
-           const localMax = Number(resNum.values[0].maxNum);
-           if (localMax > last) {
-             last = localMax;
-           }
+        const docSnap = await getDoc(doc(db, 'settings', 'app'));
+        if (docSnap.exists()) {
+          last = Number(docSnap.data()?.lastInvoiceNumber) || 0;
         }
-      } catch (err) {}
-      
-      setInvoiceNumber(`${last + 1}`);
+      } catch (err) {
+        console.warn("Could not fetch settings/app for baseline", err);
+      }
+    }
+
+    try {
+      const { localDb } = await import('../../lib/local-db');
+      const resNum = await localDb.query("SELECT COALESCE(MAX(CAST(invoiceNumber AS INTEGER)), 0) as maxNum FROM invoices WHERE invoiceNumber GLOB '*[0-9]*'");
+      if (resNum.values?.[0]?.maxNum) {
+         const localMax = Number(resNum.values[0].maxNum);
+         if (localMax > last) {
+           last = localMax;
+         }
+      }
+    } catch (err) {
+      console.warn("Failed to query local max invoice number", err);
+    }
+    
+    setInvoiceNumber(`${last + 1}`);
+  };
+
+  useEffect(() => {
+    // Calculate on mount
+    calculateNextInvoiceNumber();
+
+    // 1. App settings for real-time baseline invoice number
+    const unsubscribeAppSettings = onSnapshot(doc(db, 'settings', 'app'), (docSnap) => {
+      if (docSnap.exists()) {
+        calculateNextInvoiceNumber(docSnap.data());
+      }
+    });
+
+    // 1b. Real-time updates when new invoices are added locally (synced from other devices)
+    const unsubscribeInvoices = onSnapshot(collection(db, 'invoices'), () => {
+      calculateNextInvoiceNumber();
     });
 
     // 2. Shop settings for company details (logo, name, phones, etc)
@@ -173,6 +200,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
 
     return () => {
       unsubscribeAppSettings();
+      unsubscribeInvoices();
       unsubscribeShopSettings();
       unsubscribeCats();
       unsubscribeModels();
@@ -303,7 +331,6 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
       }
 
       finalAssignedInvoiceNumber = `${lastInvoiceNumber + 1}`;
-      let settingsUpdates: any = { lastInvoiceNumber: lastInvoiceNumber + 1 };
 
       const batch = writeBatch(db);
 
@@ -314,6 +341,19 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
         if (settingsDoc.exists()) {
           lastCustomerNumber = Number(settingsDoc.data()?.lastCustomerNumber) || 0;
         }
+        try {
+          const { localDb } = await import('../../lib/local-db');
+          const resNum = await localDb.query("SELECT COALESCE(MAX(customerNumber), 0) as maxNum FROM customers");
+          if (resNum.values?.[0]?.maxNum) {
+            const localCustMax = Number(resNum.values[0].maxNum);
+            if (localCustMax > lastCustomerNumber) {
+              lastCustomerNumber = localCustMax;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to get local max customer number", err);
+        }
+
         const finalCustomerNumber = lastCustomerNumber + 1;
 
         const customerRef = doc(collection(db, 'customers'));
@@ -328,8 +368,6 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
           updatedAt: serverTimestamp()
         });
         finalCustomerId = customerRef.id;
-        
-        settingsUpdates.lastCustomerNumber = finalCustomerNumber;
       }
 
       // 2. Handle Invoice
@@ -400,8 +438,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
         }
       }
 
-      // 4. Update Settings
-      batch.set(settingsRef, settingsUpdates, { merge: true });
+      // 4. Update Settings - Removed to avoid conflicts on central settings/app document
 
       await batch.commit();
 
