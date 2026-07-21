@@ -131,24 +131,39 @@ export class LocalProvider implements IDataProvider {
       }
     } else {
       const existing = await localDb.query(`SELECT * FROM ${collectionName} WHERE id = ?`, [id]);
-      const finalData = (options?.merge && existing.values && existing.values.length > 0)
+      const mergedData = (options?.merge && existing.values && existing.values.length > 0)
         ? { ...existing.values[0], ...cleanedData }
         : cleanedData;
 
-      Object.keys(finalData).forEach(key => {
-        if (finalData[key] && typeof finalData[key] === 'object' && !finalData[key].toISOString) {
-          finalData[key] = JSON.stringify(finalData[key]);
+      const validColumns = await localDb.getTableColumns(collectionName);
+      const validColumnsSet = new Set(validColumns);
+      
+      const finalData: Record<string, any> = {};
+      Object.keys(mergedData).forEach(key => {
+        if (validColumnsSet.has(key)) {
+          finalData[key] = mergedData[key];
+          if (finalData[key] && typeof finalData[key] === 'object' && !finalData[key].toISOString) {
+            finalData[key] = JSON.stringify(finalData[key]);
+          }
+        } else {
+          console.warn(`[LocalProvider] Ignoring field "${key}" not found in local table "${collectionName}"`);
         }
       });
 
       const fields = Object.keys(finalData);
-      const placeholders = fields.map(() => '?').join(', ');
-      const updatePlaceholders = fields.map(f => `${f} = ?`).join(', ');
+      
+      if (fields.length > 0) {
+        const placeholders = fields.map(() => '?').join(', ');
+        const updatePlaceholders = fields.map(f => `${f} = ?`).join(', ');
 
-      if (existing.values && existing.values.length > 0) {
-        await localDb.run(`UPDATE ${collectionName} SET ${updatePlaceholders} WHERE id = ?`, [...Object.values(finalData), id]);
-      } else {
-        await localDb.run(`INSERT INTO ${collectionName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`, [id, ...Object.values(finalData)]);
+        if (existing.values && existing.values.length > 0) {
+          await localDb.run(`UPDATE ${collectionName} SET ${updatePlaceholders} WHERE id = ?`, [...Object.values(finalData), id]);
+        } else {
+          await localDb.run(`INSERT INTO ${collectionName} (id, ${fields.join(', ')}) VALUES (?, ${placeholders})`, [id, ...Object.values(finalData)]);
+        }
+      } else if (!existing.values || existing.values.length === 0) {
+        // Just insert ID if no other valid fields exist
+        await localDb.run(`INSERT INTO ${collectionName} (id) VALUES (?)`, [id]);
       }
     }
 
@@ -167,15 +182,21 @@ export class LocalProvider implements IDataProvider {
   }
 
   async updateDoc(collectionName: string, id: string, data: any, transactionGroupId?: string): Promise<void> {
-    const cleanedData = { ...data };
+    const validColumns = await localDb.getTableColumns(collectionName);
+    const validColumnsSet = new Set(validColumns);
+
+    const cleanedData: Record<string, any> = {};
     const increments: { key: string, value: number }[] = [];
 
-    Object.keys(cleanedData).forEach(key => {
-      const val = cleanedData[key];
+    Object.keys(data).forEach(key => {
+      if (!validColumnsSet.has(key)) {
+        console.warn(`[LocalProvider] Ignoring field "${key}" not found in local table "${collectionName}" during update`);
+        return;
+      }
+      const val = data[key];
       if (val && typeof val === 'object') {
         if (val.type === 'increment') {
           increments.push({ key, value: val.value });
-          delete cleanedData[key];
           return;
         }
         if (!val.toISOString) {
@@ -185,6 +206,8 @@ export class LocalProvider implements IDataProvider {
             cleanedData[key] = val.toISOString();
           } catch (e) {}
         }
+      } else {
+        cleanedData[key] = val;
       }
     });
 

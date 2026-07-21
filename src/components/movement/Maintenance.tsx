@@ -72,7 +72,7 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
   useEffect(() => {
     const loadShopConfig = async () => {
       try {
-        const docSnap = await getDoc(doc(db, 'settings', 'shop'));
+        const docSnap = await getDoc(doc(db, 'company_details', 'main_details'));
         if (docSnap.exists()) {
           setShopConfig(docSnap.data());
           return;
@@ -87,7 +87,7 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
     };
     loadShopConfig();
 
-    const unsubShopSettings = onSnapshot(doc(db, 'settings', 'shop'), (docSnap) => {
+    const unsubShopSettings = onSnapshot(doc(db, 'company_details', 'main_details'), (docSnap) => {
       if (docSnap.exists()) {
         setShopConfig(docSnap.data());
       }
@@ -335,7 +335,8 @@ export default function Maintenance({ user, onBack, initialInvoice }: { user: Us
           
           batch.update(doc(db, 'invoice_items', originalItem.id!), {
             quantity: rem,
-            cost: (unitCost * rem)
+            cost: (unitCost * rem),
+            updatedAt: serverTimestamp()
           });
         } else {
           // update fully

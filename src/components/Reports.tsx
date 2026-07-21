@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs } from '../firebase';
+import { collection, getDocs, doc, getDoc } from '../firebase';
 import { db } from '../firebase';
 import { 
   Package, 
@@ -95,9 +95,8 @@ export default function Reports({ user, onBack }: { user: User; onBack?: () => v
   const [shopConfig, setShopConfig] = useState<any>(null);
 
   useEffect(() => {
-    getDocs(collection(db, 'settings')).then(snap => {
-      const shop = snap.docs.find(d => d.id === 'shop');
-      if (shop) setShopConfig(shop.data());
+    getDoc(doc(db, 'company_details', 'main_details')).then(snap => {
+      if (snap.exists()) setShopConfig(snap.data());
     });
   }, []);
 

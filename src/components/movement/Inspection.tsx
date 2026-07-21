@@ -219,6 +219,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
         invoiceItems.forEach(item => {
           batch.update(doc(db, 'invoice_items', item.id!), {
             status: '20',
+            technician: item.technician || user?.name || user?.username || 'System',
             updatedAt: serverTimestamp()
           });
         });
@@ -692,7 +693,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
 
   // Fetch shop config
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'shop')).then((snap) => {
+    getDoc(doc(db, 'company_details', 'main_details')).then((snap) => {
       if (snap.exists()) {
         setShopConfig(snap.data());
       }
@@ -946,7 +947,7 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
 
         const itemSubStatus = isPhase1 
           ? row.decision 
-          : (row.decision === 'intact' ? 'intact' : row.decision === 'unrepairable' ? 'unrepairable' : '');
+          : (row.decision === 'intact' ? 'intact' : row.decision === 'unrepairable' ? 'unrepairable' : 'maintenance');
 
         const rowCount = Number(row.count) || 1;
         let rem = itemRemaining.get(originalItem.id!) || 0;
@@ -970,7 +971,8 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
           itemRemaining.set(originalItem.id!, rem);
           
           batch.update(doc(db, 'invoice_items', originalItem.id!), {
-            quantity: rem
+            quantity: rem,
+            updatedAt: serverTimestamp()
           });
           if (row.decision === 'repairing') totalCostAdjustment += Number(row.cost) || 0;
         } else {
@@ -982,7 +984,8 @@ export default function Inspection({ user, onBack, initialInvoice }: { user: Use
             quantity: rem,
             engineerReport: row.report,
             cost: row.decision === 'repairing' ? (Number(row.cost) || 0) : 0,
-            technician: engineerName
+            technician: engineerName,
+            updatedAt: serverTimestamp()
           });
           if (row.decision === 'repairing') totalCostAdjustment += Number(row.cost) || 0;
         }

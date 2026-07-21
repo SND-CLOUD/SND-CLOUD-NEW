@@ -4,6 +4,7 @@ import { doc, setDoc } from '../firebase';
 import { db } from '../firebase';
 import { ShopConfig } from '../types';
 import { Store, Calendar, Upload, CheckCircle, Loader2, ArrowRight } from 'lucide-react';
+import { localDb } from '../lib/local-db';
 
 export default function SetupWizard({ onComplete }: { onComplete: (config: ShopConfig) => void }) {
   const [loading, setLoading] = useState(false);
@@ -18,7 +19,59 @@ export default function SetupWizard({ onComplete }: { onComplete: (config: ShopC
     e.preventDefault();
     setLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'shop'), config);
+      // 1. Build full company details with default placeholder data
+      const fullDetails = {
+        name: config.shopName || "اسم الشركة",
+        phone1: "123456789",
+        phone2: "123456789",
+        address: "عنوان الشركة",
+        receiptNotes: "ملاحظات الفاتورة",
+        managerName: "اسم المدير",
+        commercialRecord: "123456",
+        taxNumber: "1234567890",
+        logo: config.logoUrl || "",
+        countryCode: "+967",
+        bankYerName: "بنك 1",
+        bankYerAccount: "0000000000",
+        bankSarName: "بنك 2",
+        bankSarAccount: "0000000000",
+        bankUsdName: "بنك 3",
+        bankUsdAccount: "0000000000",
+        bankHolderName: "اسم صاحب الحساب",
+        liabilityCurrency: "YER",
+        updatedAt: new Date().toISOString(),
+        fiscalYear: config.fiscalYear || new Date().getFullYear().toString(),
+        startDate: config.startDate || new Date().toISOString().split('T')[0]
+      };
+
+      // 2. Save to Firestore
+      await setDoc(doc(db, 'company_details', 'main_details'), fullDetails, { merge: true });
+
+      // 3. Save to Local DB
+      try {
+        await localDb.query(
+          `INSERT OR REPLACE INTO company_details (
+            id, name, phone1, phone2, address, receiptNotes, managerName,
+            commercialRecord, taxNumber, logo, countryCode,
+            bankYerName, bankYerAccount, bankSarName, bankSarAccount,
+            bankUsdName, bankUsdAccount, bankHolderName, liabilityCurrency,
+            updatedAt, fiscalYear, startDate
+          ) VALUES (
+            'main_details', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          )`,
+          [
+            fullDetails.name, fullDetails.phone1, fullDetails.phone2, fullDetails.address,
+            fullDetails.receiptNotes, fullDetails.managerName, fullDetails.commercialRecord,
+            fullDetails.taxNumber, fullDetails.logo, fullDetails.countryCode,
+            fullDetails.bankYerName, fullDetails.bankYerAccount, fullDetails.bankSarName, fullDetails.bankSarAccount,
+            fullDetails.bankUsdName, fullDetails.bankUsdAccount, fullDetails.bankHolderName, fullDetails.liabilityCurrency,
+            fullDetails.updatedAt, fullDetails.fiscalYear, fullDetails.startDate
+          ]
+        );
+      } catch (localErr) {
+        console.error("Local save failed", localErr);
+      }
+
       onComplete(config);
     } catch (e) {
       console.error(e);

@@ -366,7 +366,7 @@ export default function Vault({ user, shopConfig, onBack }: { user: User; shopCo
     loadDatabaseData();
     const fetchShopConfig = async () => {
       try {
-        const snap = await getDoc(doc(db, 'settings', 'shop'));
+        const snap = await getDoc(doc(db, 'company_details', 'main_details'));
         if (snap.exists()) {
           // setShopConfig(snap.data() as any);
         } else {

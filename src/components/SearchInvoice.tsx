@@ -376,7 +376,7 @@ export default function SearchInvoice({ onBack, user }: { onBack?: () => void, u
       setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     
-    getDoc(doc(db, 'settings', 'shop')).then((snap) => {
+    getDoc(doc(db, 'company_details', 'main_details')).then((snap) => {
       if (snap.exists()) {
         setShopConfig(snap.data());
       }

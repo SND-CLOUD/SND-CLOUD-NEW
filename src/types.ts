@@ -193,4 +193,9 @@ export interface ShopConfig {
   bankUsdName?: string;
   bankUsdAccount?: string;
   bankHolderName?: string;
+  liabilityCurrency?: string;
+  managerName?: string;
+  commercialRecord?: string;
+  taxNumber?: string;
+  receiptNotes?: string;
 }

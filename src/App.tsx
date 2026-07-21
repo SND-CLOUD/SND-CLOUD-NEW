@@ -30,11 +30,12 @@ import {
   X,
   RefreshCw
 } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, setDoc, onSnapshot, writeBatch } from './firebase';
+import { collection, query, where, getDocs, addDoc, doc, getDoc, setDoc, onSnapshot, writeBatch, deleteDoc, serverTimestamp } from './firebase';
 import { db } from './firebase';
 import { User, ShopConfig } from './types';
 import { openWhatsApp, sendUniversalReminder } from './lib/shareHelper';
 import { ProviderFactory } from './data/ProviderFactory';
+import { localDb } from './lib/local-db';
 
 // Components
 import Dashboard from './components/Dashboard';
@@ -318,7 +319,7 @@ export default function App() {
       
       batch.update(invoiceRef, {
         amountPaid: updatedAmountPaid,
-        updatedAt: new Date().getTime()
+        updatedAt: serverTimestamp()
       });
 
       const txRef = doc(collection(db, 'vault_transactions'));
@@ -387,7 +388,15 @@ export default function App() {
         // Fetch Shop Config with timeout/resilience
         // We'll try to get it, if it fails we just log it and proceed
         try {
-          const shopSnap = await getDoc(doc(db, 'settings', 'shop'));
+          // Cleanup legacy 'shop' document from 'settings' collection
+          try {
+            await deleteDoc(doc(db, 'settings', 'shop'));
+            await localDb.run("DELETE FROM settings WHERE id = 'shop'");
+          } catch (cleanupErr) {
+            console.warn("Could not cleanup legacy shop doc:", cleanupErr);
+          }
+
+          const shopSnap = await getDoc(doc(db, 'company_details', 'main_details'));
           if (shopSnap.exists()) {
             setShopConfig(shopSnap.data() as ShopConfig);
           } else {

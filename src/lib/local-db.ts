@@ -117,6 +117,7 @@ class LocalDatabase {
         CREATE TABLE IF NOT EXISTS company_details (
           id TEXT PRIMARY KEY,
           shopName TEXT,
+          name TEXT,
           countryCode TEXT,
           phone1 TEXT,
           phone2 TEXT,
@@ -133,7 +134,12 @@ class LocalDatabase {
           liabilityCurrency TEXT,
           bio TEXT,
           logoUrl TEXT,
+          logo TEXT,
           address TEXT,
+          receiptNotes TEXT,
+          managerName TEXT,
+          commercialRecord TEXT,
+          taxNumber TEXT,
           updatedAt TEXT,
           bankYerName TEXT,
           bankYerAccount TEXT,
@@ -453,6 +459,12 @@ class LocalDatabase {
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN updatedAt TEXT'); } catch (err) {}
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN fiscalYear TEXT'); } catch (err) {}
       try { await this.db.run('ALTER TABLE company_details ADD COLUMN startDate TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN name TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN logo TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN receiptNotes TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN managerName TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN commercialRecord TEXT'); } catch (err) {}
+      try { await this.db.run('ALTER TABLE company_details ADD COLUMN taxNumber TEXT'); } catch (err) {}
 
       // Attempt to add notes column to existing invoices table if needed
       try {
@@ -923,6 +935,57 @@ class LocalDatabase {
       }
       
       return result;
+    });
+  }
+
+  async getAllTableSchemas(): Promise<Record<string, string[]>> {
+    return this.enqueue(async () => {
+      if (!this.db) {
+        await this.initialize();
+      } else {
+        try {
+          const isOpen = await this.db.isDBOpen();
+          if (!isOpen.result) {
+            await this.db.open();
+          }
+        } catch (err) {}
+      }
+      if (!this.db) throw new Error('Failed to initialize local database connection.');
+      
+      const tablesRes = await this.db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`);
+      const schemas: Record<string, string[]> = {};
+      
+      if (tablesRes.values) {
+        for (const row of tablesRes.values) {
+          const tableName = row.name;
+          const colRes = await this.db.query(`PRAGMA table_info(${tableName})`);
+          if (colRes.values) {
+            schemas[tableName] = colRes.values.map(c => c.name);
+          }
+        }
+      }
+      return schemas;
+    });
+  }
+
+  async getTableColumns(tableName: string): Promise<string[]> {
+    return this.enqueue(async () => {
+      if (!this.db) {
+        await this.initialize();
+      } else {
+        try {
+          const isOpen = await this.db.isDBOpen();
+          if (!isOpen.result) {
+            await this.db.open();
+          }
+        } catch (err) {}
+      }
+      if (!this.db) throw new Error('Failed to initialize local database connection.');
+      const res = await this.db.query(`PRAGMA table_info(${tableName})`);
+      if (res.values) {
+        return res.values.map(row => row.name);
+      }
+      return [];
     });
   }
 

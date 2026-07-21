@@ -174,7 +174,8 @@ export default function Customers({ user, shopConfig, onBack }: { user: SystemUs
         phone2: editPhone2.trim(),
         email: editEmail.trim(),
         notes: editNotes.trim(),
-        hasWhatsapp: editHasWhatsapp
+        hasWhatsapp: editHasWhatsapp,
+        updatedAt: serverTimestamp()
       };
       
       await updateDoc(customerRef, updatedFields);

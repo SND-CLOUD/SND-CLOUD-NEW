@@ -1,7 +1,7 @@
 import { CustomerAutocomplete } from '../CustomerAutocomplete';
 import { sharePdfFile, openWhatsApp } from '../../lib/shareHelper';
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc, writeBatch, getDoc, setDoc } from '../../firebase';
+import { collection, onSnapshot, doc, writeBatch, getDoc, setDoc, serverTimestamp } from '../../firebase';
 import { db } from '../../firebase';
 import { Invoice, InvoiceItem, User } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -275,7 +275,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
   }, [contentHeight, activePrintData]);
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'shop')).then((snap) => {
+    getDoc(doc(db, 'company_details', 'main_details')).then((snap) => {
       if (snap.exists()) setShopConfig(snap.data());
     });
     const unsubInvoices = onSnapshot(collection(db, 'invoices'), (s) => setInvoices(s.docs.map(d => ({ id: d.id, ...d.data() } as Invoice))));
@@ -531,7 +531,7 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
       const batch = writeBatch(db);
       selectedItemIds.forEach(id => {
         const itemRef = doc(db, 'invoice_items', id);
-        batch.update(itemRef, { status: '60', deliveredAt: new Date().getTime() });
+        batch.update(itemRef, { status: '60', deliveredAt: new Date().getTime(), updatedAt: serverTimestamp() });
       });
 
       // Update amountPaid on the Invoice
@@ -548,12 +548,12 @@ export default function DeviceExit({ user, onBack }: { user: User, onBack: () =>
       const readyInvoiceItems = allInvoiceItems.filter(i => getItemSubStatus(i) === 'ready');
       const newTotalCost = readyInvoiceItems.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
       
-      const invoiceUpdates: Partial<Invoice> = {
+      const invoiceUpdates: any = {
         totalCost: newTotalCost,
         amountPaid: newAmountPaid,
         discount: newDiscount,
         tax: newTax,
-        updatedAt: new Date().getTime(),
+        updatedAt: serverTimestamp(),
         printCount: (selectedInvoice.printCount || 0) + 1
       };
       

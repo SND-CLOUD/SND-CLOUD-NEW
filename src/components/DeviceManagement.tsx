@@ -248,6 +248,7 @@ export default function DeviceManagement({ user, onBack, shopConfig }: { user: U
         invoiceItems.forEach(item => {
           batch.update(doc(db, 'invoice_items', item.id!), {
             status: '20',
+            technician: item.technician || user?.name || user?.username || 'System',
             updatedAt: serverTimestamp()
           });
         });
@@ -859,12 +860,16 @@ export default function DeviceManagement({ user, onBack, shopConfig }: { user: U
         if (item.isNew) {
           const newItemRef = doc(collection(db, 'invoice_items'));
           batch.set(newItemRef, {
+            id: newItemRef.id,
             invoiceId: selectedInvoiceForAdmin!.id,
             invoiceNumber: selectedInvoiceForAdmin!.invoiceNumber,
+            customerId: selectedInvoiceForAdmin!.customerId,
             customerName: selectedInvoiceForAdmin!.customerName,
+            categoryId: item.deviceType ? item.deviceType.trim().replace(/\//g, '_') : '',
             deviceType: item.deviceType,
             deviceName: item.deviceName,
             faultType: item.faultType,
+            customerProblem: item.faultType,
             quantity: item.quantity,
             unitCost: item.unitCost,
             cost: itemCost,
@@ -879,7 +884,9 @@ export default function DeviceManagement({ user, onBack, shopConfig }: { user: U
           batch.update(itemRef, {
             deviceType: item.deviceType,
             deviceName: item.deviceName,
+            categoryId: item.deviceType ? item.deviceType.trim().replace(/\//g, '_') : '',
             faultType: item.faultType,
+            customerProblem: item.faultType,
             quantity: item.quantity,
             unitCost: item.unitCost,
             cost: itemCost,

@@ -107,9 +107,21 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
 
   useEffect(() => {
     // 1. App settings for real-time invoice number
-    const unsubscribeAppSettings = onSnapshot(doc(db, 'settings', 'app'), (docSnap) => {
+    const unsubscribeAppSettings = onSnapshot(doc(db, 'settings', 'app'), async (docSnap) => {
       const data = docSnap.data();
-      const last = Number(data?.lastInvoiceNumber) || 0;
+      let last = Number(data?.lastInvoiceNumber) || 0;
+      
+      try {
+        const { localDb } = await import('../../lib/local-db');
+        const resNum = await localDb.query("SELECT COALESCE(MAX(CAST(invoiceNumber AS INTEGER)), 0) as maxNum FROM invoices WHERE invoiceNumber GLOB '*[0-9]*'");
+        if (resNum.values?.[0]?.maxNum) {
+           const localMax = Number(resNum.values[0].maxNum);
+           if (localMax > last) {
+             last = localMax;
+           }
+        }
+      } catch (err) {}
+      
       setInvoiceNumber(`${last + 1}`);
     });
 
@@ -117,7 +129,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
     const loadShopConfig = async () => {
       try {
         // Try Firebase first
-        const docSnap = await getDoc(doc(db, 'settings', 'shop'));
+        const docSnap = await getDoc(doc(db, 'company_details', 'main_details'));
         if (docSnap.exists()) {
           setShopConfig(docSnap.data());
           return;
@@ -133,7 +145,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
       }
     };
 
-    const unsubscribeShopSettings = onSnapshot(doc(db, 'settings', 'shop'), (docSnap) => {
+    const unsubscribeShopSettings = onSnapshot(doc(db, 'company_details', 'main_details'), (docSnap) => {
       if (docSnap.exists()) {
         setShopConfig(docSnap.data());
       }
@@ -276,6 +288,20 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
       if (settingsDoc.exists()) {
         lastInvoiceNumber = Number(settingsDoc.data()?.lastInvoiceNumber) || 0;
       }
+      
+      try {
+        const { localDb } = await import('../../lib/local-db');
+        const resNum = await localDb.query("SELECT COALESCE(MAX(CAST(invoiceNumber AS INTEGER)), 0) as maxNum FROM invoices WHERE invoiceNumber GLOB '*[0-9]*'");
+        if (resNum.values?.[0]?.maxNum) {
+           const localMax = Number(resNum.values[0].maxNum);
+           if (localMax > lastInvoiceNumber) {
+             lastInvoiceNumber = localMax;
+           }
+        }
+      } catch (err) {
+        console.warn("Failed to get local max invoice number", err);
+      }
+
       finalAssignedInvoiceNumber = `${lastInvoiceNumber + 1}`;
       let settingsUpdates: any = { lastInvoiceNumber: lastInvoiceNumber + 1 };
 
@@ -292,12 +318,14 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
 
         const customerRef = doc(collection(db, 'customers'));
         batch.set(customerRef, {
+          id: customerRef.id,
           customerNumber: finalCustomerNumber,
           name: customer.name,
           phone1: noPhone ? 'لا يوجد' : customer.phone1,
           phone2: customer.phone2,
           hasWhatsapp: true,
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
         finalCustomerId = customerRef.id;
         
@@ -308,6 +336,7 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
       const invoiceTotal = 0;
       const invoiceRef = doc(collection(db, 'invoices'));
       batch.set(invoiceRef, {
+        id: invoiceRef.id,
         invoiceNumber: finalAssignedInvoiceNumber,
         customerId: finalCustomerId,
         customerName: customer.name,
@@ -323,33 +352,36 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
 
       // 3. Handle Items
       for (const item of items) {
+        let currentCatName = item.deviceType?.trim() || 'مجهول';
+        let catId = currentCatName ? currentCatName.replace(/\//g, '_') : '';
+
         const itemRef = doc(collection(db, 'invoice_items'));
         const cleanItem = {
+          id: itemRef.id,
           invoiceId: invoiceRef.id,
           invoiceNumber: finalAssignedInvoiceNumber,
           customerId: finalCustomerId,
           customerName: customer.name,
-          categoryId: '', // We don't have catId strictly until we find it
-          deviceType: item.deviceType || 'مجهول',
+          categoryId: catId,
+          deviceType: currentCatName,
           deviceName: item.deviceName || '',
           quantity: Number(item.quantity) || 1,
+          faultType: item.faultType || 'صيانة',
           customerProblem: item.faultType || 'صيانة',
           deviceNotes: item.deviceNotes || 'بدون ملحقات',
           cost: 0,
           status: '10',
           technician: '',
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
           createdBy: user?.name || 'System'
         };
         batch.set(itemRef, cleanItem);
 
         // Auto-add new category
-        let currentCatName = item.deviceType?.trim();
-        let catId = '';
         if (currentCatName) {
-           catId = currentCatName.replace(/\//g, '_');
            const catRef = doc(db, 'device_categories', catId);
-           batch.set(catRef, { name: currentCatName, createdAt: serverTimestamp() }, { merge: true });
+           batch.set(catRef, { id: catId, name: currentCatName, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
         }
 
         // Auto-add new model under the category
@@ -358,10 +390,12 @@ export default function DeviceEntry({ onBack, user }: { onBack: () => void, user
            const modelId = `${catId}_${currentModelName.replace(/\//g, '_')}`;
            const modelRef = doc(db, 'device_models', modelId);
            batch.set(modelRef, { 
+             id: modelId,
              categoryId: catId, 
              categoryName: currentCatName, 
              name: currentModelName, 
-             createdAt: serverTimestamp() 
+             createdAt: serverTimestamp(),
+             updatedAt: serverTimestamp()
            }, { merge: true });
         }
       }

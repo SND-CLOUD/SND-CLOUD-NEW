@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, setDoc, where, getDocs } from '../firebase';
+import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, setDoc, where, getDocs, serverTimestamp } from '../firebase';
 import { db } from '../firebase';
 import { User, AppPermissions } from '../types';
 import { ShieldCheck, UserPlus, Trash2, Edit2, ShieldAlert, Loader2, Save, X, ArrowLeft, Check, Lock, Package, Wallet, Users, FileText, BarChart, Settings, UserCircle, Cpu, UserCheck, UserX, Eye, EyeOff, Power, Database } from 'lucide-react';
@@ -380,7 +380,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       if (isPasswordOnlyView) {
         // Only password update
         await updateDoc(doc(db, 'users', editingUser.id), {
-          password: editingUser.password
+          password: editingUser.password,
+          updatedAt: serverTimestamp()
         });
       } else {
         // Standard user update
@@ -388,7 +389,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
           name: editingUser.name,
           password: editingUser.password,
           role: editingUser.role,
-          permissions: editingUser.permissions || DEFAULT_PERMISSIONS
+          permissions: editingUser.permissions || DEFAULT_PERMISSIONS,
+          updatedAt: serverTimestamp()
         });
       }
       setEditingUser(null);
@@ -407,7 +409,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       const isCurrentlyActive = (userToToggle.isActive as any) === undefined || (userToToggle.isActive as any) === null || (userToToggle.isActive as any) === true || (userToToggle.isActive as any) === 1 || (userToToggle.isActive as any) === 'true' || (userToToggle.isActive as any) === '1';
       const newStatus = isCurrentlyActive ? 0 : 1;
       await updateDoc(doc(db, 'users', userToToggle.id), {
-        isActive: newStatus
+        isActive: newStatus,
+        updatedAt: serverTimestamp()
       });
     } catch (err) {
       console.error("Error toggling user activation:", err);

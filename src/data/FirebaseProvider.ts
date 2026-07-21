@@ -128,11 +128,26 @@ export class FirebaseProvider implements IDataProvider {
               data: () => docData
             };
           });
+          
+          const docChanges = () => snap.docChanges().map(change => {
+            const fsDoc = change.doc;
+            const docData = this.formatFirestoreData(fsDoc.data());
+            return {
+              type: change.type,
+              doc: {
+                id: fsDoc.id,
+                ref: { name: collectionName, id: fsDoc.id, path: `${collectionName}/${fsDoc.id}` },
+                data: () => docData
+              }
+            };
+          });
+
           callback({
             docs,
             empty: docs.length === 0,
             size: docs.length,
-            forEach: (cb: any) => docs.forEach(cb)
+            forEach: (cb: any) => docs.forEach(cb),
+            docChanges
           });
         },
         errorCallback || ((err: any) => {

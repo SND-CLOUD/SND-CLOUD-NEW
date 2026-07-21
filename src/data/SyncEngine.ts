@@ -17,6 +17,98 @@ function isPermissionError(err: any): boolean {
 export class SyncEngine {
   private static syncing = false;
 
+  private static activeListeners: (() => void)[] = [];
+
+  static startCloudListener() {
+    const mode = localStorage.getItem('snd_db_provider_mode') || 'AUTO';
+    if (mode !== 'AUTO') return;
+    if (this.activeListeners.length > 0) {
+      return;
+    }
+
+    console.log('SyncEngine: Initializing real-time Cloud -> Local sync listeners...');
+
+    const tables = [
+      'company_details',
+      'customers',
+      'invoices',
+      'invoice_items',
+      'vault_transactions',
+      'maintenance_actions',
+      'device_categories',
+      'device_models',
+      'approval_actions',
+      'settings',
+      'users',
+      'engineers',
+      'inventory_items',
+      'fin_transaction_types',
+      'fin_funds',
+      'fin_currencies',
+      'fin_payment_methods',
+      'document_outputs'
+    ];
+
+    for (const table of tables) {
+      try {
+        const unsub = FirebaseProviderInstance.onSnapshot(table, undefined, async (snapshot: any) => {
+          // Get IDs of documents currently pending local write in the outbox to avoid overwrite
+          const pendingRes = await localDb.query(
+            "SELECT recordId FROM outbox WHERE tableName = ? AND status IN ('PENDING', 'FAILED')",
+            [table]
+          );
+          const pendingIds = new Set((pendingRes.values || []).map((r: any) => r.recordId));
+
+          const processItems = snapshot.docChanges ? snapshot.docChanges() : snapshot.docs.map((doc: any) => ({ type: 'added', doc }));
+
+          for (const change of processItems) {
+            const doc = change.doc || change;
+            const type = change.type || 'added';
+            
+            const cloudItem = doc.data ? doc.data() : doc;
+            if (!cloudItem || !cloudItem.id) continue;
+            if (pendingIds.has(cloudItem.id)) continue; // Skip pulling if there is a pending local write
+
+            if (type === 'removed') {
+              console.log(`SyncEngine [Realtime]: Deleting ${table}/${cloudItem.id} locally due to cloud removal.`);
+              await LocalProviderInstance.deleteDoc(table, cloudItem.id);
+              continue;
+            }
+
+            // Query only this single document locally to see if it needs update
+            const localDocRes = await LocalProviderInstance.getDoc(table, cloudItem.id);
+            const localItem = localDocRes.exists() ? localDocRes.data() : null;
+
+            const localUpdatedStr = localItem?.updatedAt?.toISOString?.() || localItem?.updatedAt || '';
+            const cloudUpdatedStr = cloudItem.updatedAt?.toISOString?.() || cloudItem.updatedAt || '';
+
+            const needsDownload = !localItem ||
+              (cloudUpdatedStr && (!localUpdatedStr || new Date(cloudUpdatedStr) > new Date(localUpdatedStr)));
+
+            if (needsDownload) {
+              console.log(`SyncEngine [Realtime]: Down-syncing ${table}/${cloudItem.id} from cloud.`);
+              await LocalProviderInstance.setDoc(table, cloudItem.id, cloudItem, undefined, 'BYPASS_OUTBOX');
+            }
+          }
+        }, (err: any) => {
+          console.warn(`SyncEngine [Realtime]: Listener error on ${table}:`, err);
+        });
+
+        this.activeListeners.push(unsub);
+      } catch (e) {
+        console.error(`SyncEngine [Realtime]: Failed to setup listener for table ${table}:`, e);
+      }
+    }
+  }
+
+  static stopCloudListener() {
+    this.activeListeners.forEach(unsub => {
+      try { unsub(); } catch (e) {}
+    });
+    this.activeListeners = [];
+    console.log('SyncEngine: Stopped real-time Cloud -> Local sync listeners.');
+  }
+
   static isSyncing(): boolean {
     return this.syncing;
   }
@@ -185,7 +277,7 @@ export class SyncEngine {
         let cloudItems: any[] = [];
         try {
           const cloudRes = await FirebaseProviderInstance.getDocs(table);
-          cloudItems = cloudRes.docs.map((d: any) => d.data());
+          cloudItems = cloudRes.docs.map((d: any) => ({ id: d.id, ...d.data() }));
         } catch (err) {
           console.warn(`SyncEngine: Could not fetch cloud records for table ${table}:`, err);
           continue; // Skip table if cloud fetch fails (e.g. offline)

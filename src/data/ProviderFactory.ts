@@ -23,6 +23,7 @@ export class ProviderFactory {
             const { SyncEngine } = await import('./SyncEngine');
             console.log('Starting background auto-sync...');
             await SyncEngine.syncAll();
+            SyncEngine.startCloudListener();
           } catch (e) {
             console.error('Failed to run background auto-sync:', e);
           }
@@ -31,6 +32,11 @@ export class ProviderFactory {
       window.addEventListener('offline', () => {
         this.isOnline = false;
         console.log('App connection changed: OFFLINE. Running in local mode if AUTO is selected.');
+        if (this.getMode() === 'AUTO') {
+          import('./SyncEngine').then(({ SyncEngine }) => {
+            SyncEngine.stopCloudListener();
+          }).catch(e => console.error('Failed to stop cloud listener on offline:', e));
+        }
       });
 
       // Trigger sync on startup if online and AUTO
@@ -40,6 +46,7 @@ export class ProviderFactory {
             const { SyncEngine } = await import('./SyncEngine');
             console.log('Starting startup auto-sync...');
             await SyncEngine.syncAll();
+            SyncEngine.startCloudListener();
           } catch (e) {
             console.error('Failed to run startup auto-sync:', e);
           }
@@ -98,6 +105,14 @@ export class ProviderFactory {
 
   static getProvider(): IDataProvider {
     const type = this.getActiveProviderType();
+    
+    // Proactively start real-time cloud listeners if we are online and in AUTO (hybrid) mode
+    if (this.isOnline && this.getMode() === 'AUTO') {
+      import('./SyncEngine').then(({ SyncEngine }) => {
+        SyncEngine.startCloudListener();
+      }).catch(e => console.error('Failed to start cloud listener in getProvider:', e));
+    }
+
     if (type === 'CLOUD') {
       return FirebaseProviderInstance;
     }

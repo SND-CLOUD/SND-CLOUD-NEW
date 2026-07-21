@@ -92,6 +92,11 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   const [bankUsdName, setBankUsdName] = useState('');
   const [bankUsdAccount, setBankUsdAccount] = useState('');
   const [bankHolderName, setBankHolderName] = useState('');
+  const [liabilityCurrency, setLiabilityCurrency] = useState('YER');
+  const [managerName, setManagerName] = useState('');
+  const [commercialRecord, setCommercialRecord] = useState('');
+  const [taxNumber, setTaxNumber] = useState('');
+  const [receiptNotes, setReceiptNotes] = useState('');
 
   // Audit States
   const [isAuditing, setIsAuditing] = useState(false);
@@ -120,6 +125,10 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
   const [backupTime, setBackupTime] = useState('00:00');
   const [backupPath, setBackupPath] = useState('Documents/SND_Backups');
   const [backupCount, setBackupCount] = useState(0);
+
+  const [deviceUUID, setDeviceUUID] = useState('');
+  const [showSchemaModal, setShowSchemaModal] = useState(false);
+  const [dbSchemas, setDbSchemas] = useState<Record<string, string[]>>({});
 
   const [statsData, setStatsData] = useState({
     invoices: 0,
@@ -177,6 +186,13 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
 
   useEffect(() => {
     const fetch = async () => {
+      let uuid = localStorage.getItem('snd_hybrid_device_uuid');
+      if (!uuid) {
+        uuid = crypto.randomUUID();
+        localStorage.setItem('snd_hybrid_device_uuid', uuid);
+      }
+      setDeviceUUID(uuid);
+
       const s = await getDoc(doc(db, 'settings', 'app'));
       const data = s.data();
       setInvoiceCounter(data?.lastInvoiceNumber || 0);
@@ -221,13 +237,18 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
           setBankUsdName(detail.bankUsdName || '');
           setBankUsdAccount(detail.bankUsdAccount || '');
           setBankHolderName(detail.bankHolderName || '');
+          setLiabilityCurrency(detail.liabilityCurrency || 'YER');
+          setManagerName(detail.managerName || 'اسم المدير');
+          setCommercialRecord(detail.commercialRecord || '123456');
+          setTaxNumber(detail.taxNumber || '1234567890');
+          setReceiptNotes(detail.receiptNotes || 'ملاحظات الفاتورة');
         }
       } catch (localErr) {
         console.warn("Failed to fetch local company details from SQLite:", localErr);
       }
 
       try {
-        const shopSnap = await getDoc(doc(db, 'settings', 'shop'));
+        const shopSnap = await getDoc(doc(db, 'company_details', 'main_details'));
         if (shopSnap.exists()) {
           const shopData = shopSnap.data();
           setShopName(shopData.shopName || 'عالم الصيانة والتجارة');
@@ -255,19 +276,27 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
           setBankUsdName(shopData.bankUsdName || '');
           setBankUsdAccount(shopData.bankUsdAccount || '');
           setBankHolderName(shopData.bankHolderName || '');
+          setLiabilityCurrency(shopData.liabilityCurrency || 'YER');
+          setManagerName(shopData.managerName || 'اسم المدير');
+          setCommercialRecord(shopData.commercialRecord || '123456');
+          setTaxNumber(shopData.taxNumber || '1234567890');
+          setReceiptNotes(shopData.receiptNotes || 'ملاحظات الفاتورة');
 
           // Save/Sync to local SQLite table "company_details" as well
           try {
             await localDb.run(
               `INSERT OR REPLACE INTO company_details (
-                id, shopName, countryCode, phone1, phone2, landline, 
+                id, shopName, name, countryCode, phone1, phone2, landline, 
                 phone1Call, phone1Whatsapp, phone2Call, phone2Whatsapp, 
                 landlineCall, landlineWhatsapp, facebookUrl, mapUrl, 
-                email, bio, logoUrl, address, updatedAt
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                email, bio, logoUrl, logo, address, updatedAt,
+                bankYerName, bankYerAccount, bankSarName, bankSarAccount, bankUsdName, bankUsdAccount, bankHolderName,
+                fiscalYear, startDate, receiptNotes, managerName, commercialRecord, taxNumber
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 'main_details',
-                shopData.shopName || 'عالم الصيانة والتجارة',
+                shopData.shopName || shopData.name || 'عالم الصيانة والتجارة',
+                shopData.name || shopData.shopName || 'عالم الصيانة والتجارة',
                 shopData.countryCode || '+967',
                 shopData.phone1 || '',
                 shopData.phone2 || '',
@@ -282,9 +311,23 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                 shopData.mapUrl || '',
                 shopData.email || '',
                 shopData.bio || '',
-                shopData.logoUrl || '',
+                shopData.logoUrl || shopData.logo || '',
+                shopData.logo || shopData.logoUrl || '',
                 shopData.address || '',
-                new Date().toISOString()
+                new Date().toISOString(),
+                shopData.bankYerName || '',
+                shopData.bankYerAccount || '',
+                shopData.bankSarName || '',
+                shopData.bankSarAccount || '',
+                shopData.bankUsdName || '',
+                shopData.bankUsdAccount || '',
+                shopData.bankHolderName || '',
+                shopData.fiscalYear || new Date().getFullYear().toString(),
+                shopData.startDate || new Date().toISOString().split('T')[0],
+                shopData.receiptNotes || 'ملاحظات الفاتورة',
+                shopData.managerName || 'اسم المدير',
+                shopData.commercialRecord || '123456',
+                shopData.taxNumber || '1234567890'
               ]
             );
           } catch (syncErr) {
@@ -2281,6 +2324,69 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                   placeholder="اسم صاحب الحساب (مثال: مؤسسة عالم الصيانة)"
                                 />
                               </div>
+
+                              <div className="mt-6 space-y-2">
+                                <label className="text-xs font-bold text-gray-400 block">العملة الرئيسية</label>
+                                <select
+                                  disabled={!isEditingShop}
+                                  value={liabilityCurrency}
+                                  onChange={(e) => setLiabilityCurrency(e.target.value)}
+                                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-white disabled:opacity-50 text-sm"
+                                >
+                                  <option value="YER">ريال يمني</option>
+                                  <option value="SAR">ريال سعودي</option>
+                                  <option value="USD">دولار أمريكي</option>
+                                </select>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-400 block">اسم المدير</label>
+                                  <input
+                                    type="text"
+                                    disabled={!isEditingShop}
+                                    value={managerName}
+                                    onChange={(e) => setManagerName(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-white disabled:opacity-50 text-sm"
+                                    placeholder="اسم المدير"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-400 block">السجل التجاري</label>
+                                  <input
+                                    type="text"
+                                    disabled={!isEditingShop}
+                                    value={commercialRecord}
+                                    onChange={(e) => setCommercialRecord(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-white disabled:opacity-50 text-sm font-mono text-left"
+                                    placeholder="السجل التجاري"
+                                    dir="ltr"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-400 block">الرقم الضريبي</label>
+                                  <input
+                                    type="text"
+                                    disabled={!isEditingShop}
+                                    value={taxNumber}
+                                    onChange={(e) => setTaxNumber(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-white disabled:opacity-50 text-sm font-mono text-left"
+                                    placeholder="الرقم الضريبي"
+                                    dir="ltr"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-400 block">ملاحظات الفاتورة</label>
+                                  <input
+                                    type="text"
+                                    disabled={!isEditingShop}
+                                    value={receiptNotes}
+                                    onChange={(e) => setReceiptNotes(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:border-orange-500 outline-none transition-all text-white disabled:opacity-50 text-sm"
+                                    placeholder="ملاحظات تظهر أسفل الفاتورة"
+                                  />
+                                </div>
+                              </div>
                             </div>
 
                             {/* Description / Summary of Services */}
@@ -2335,12 +2441,16 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                     bankUsdName: bankUsdName.trim(),
                                     bankUsdAccount: bankUsdAccount.trim(),
                                     bankHolderName: bankHolderName.trim(),
-                                    fiscalYear: new Date().getFullYear().toString(),
-                                    startDate: new Date().toISOString().split('T')[0],
+                                    liabilityCurrency: liabilityCurrency,
+                                    managerName: managerName.trim(),
+                                    commercialRecord: commercialRecord.trim(),
+                                    taxNumber: taxNumber.trim(),
+                                    receiptNotes: receiptNotes.trim(),
+                                    fiscalYear: shopConfig?.fiscalYear || new Date().getFullYear().toString(),
+                                    startDate: shopConfig?.startDate || new Date().toISOString().split('T')[0],
                                     updatedAt: new Date().toISOString()
                                   };
 
-                                  await setDoc(doc(db, 'settings', 'shop'), updatedConfig, { merge: true });
                                   await setDoc(doc(db, 'company_details', 'main_details'), updatedConfig, { merge: true });
                                   localStorage.setItem('snd_country_code', updatedConfig.countryCode);
 
@@ -2348,15 +2458,17 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                   try {
                                     await localDb.run(
                                       `INSERT OR REPLACE INTO company_details (
-                                        id, shopName, countryCode, phone1, phone2, landline, 
+                                        id, shopName, name, countryCode, phone1, phone2, landline, 
                                         phone1Call, phone1Whatsapp, phone2Call, phone2Whatsapp, 
                                         landlineCall, landlineWhatsapp, facebookUrl, mapUrl, 
-                                        email, bio, logoUrl, address, updatedAt,
-                                        bankYerName, bankYerAccount, bankSarName, bankSarAccount, bankUsdName, bankUsdAccount, bankHolderName
-                                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                        email, bio, logoUrl, logo, address, updatedAt,
+                                        bankYerName, bankYerAccount, bankSarName, bankSarAccount, bankUsdName, bankUsdAccount, bankHolderName, liabilityCurrency,
+                                        fiscalYear, startDate, receiptNotes, managerName, commercialRecord, taxNumber
+                                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                                       [
                                         'main_details',
                                         updatedConfig.shopName,
+                                        updatedConfig.shopName, // map to name
                                         updatedConfig.countryCode,
                                         updatedConfig.phone1,
                                         updatedConfig.phone2,
@@ -2372,15 +2484,23 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                         updatedConfig.email,
                                         updatedConfig.bio,
                                         updatedConfig.logoUrl,
+                                        updatedConfig.logoUrl, // map to logo
                                         updatedConfig.address,
-                                        new Date().toISOString(),
+                                        updatedConfig.updatedAt,
                                         updatedConfig.bankYerName,
                                         updatedConfig.bankYerAccount,
                                         updatedConfig.bankSarName,
                                         updatedConfig.bankSarAccount,
                                         updatedConfig.bankUsdName,
                                         updatedConfig.bankUsdAccount,
-                                        updatedConfig.bankHolderName
+                                        updatedConfig.bankHolderName,
+                                        updatedConfig.liabilityCurrency,
+                                        updatedConfig.fiscalYear,
+                                        updatedConfig.startDate,
+                                        updatedConfig.receiptNotes,
+                                        updatedConfig.managerName,
+                                        updatedConfig.commercialRecord,
+                                        updatedConfig.taxNumber
                                       ]
                                     );
                                   } catch (sqliteErr) {
@@ -3068,6 +3188,29 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                 </span>
                               </div>
                             </div>
+
+                            {dbMode === 'AUTO' && (
+                              <div className="p-4 bg-black/30 rounded-2xl border border-white/5 flex items-center gap-3 sm:col-span-2">
+                                <div className="p-2 rounded-lg bg-indigo-600/10 text-indigo-500">
+                                  <Fingerprint size={18} />
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                  <span className="text-xs text-gray-500 block">معرّف الجهاز (UUID) في الوضع الهجين</span>
+                                  <div className="flex items-center justify-between gap-2 mt-1">
+                                    <span className="text-sm font-mono font-bold text-white truncate">{deviceUUID}</span>
+                                    <button 
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(deviceUUID);
+                                        alert('تم نسخ المعرّف');
+                                      }}
+                                      className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition-colors shrink-0"
+                                    >
+                                      نسخ
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -3094,7 +3237,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
 
                           {/* 3. Hybrid Advanced Actions Button (Visible only in AUTO mode to users with permission) */}
                           {dbMode === 'AUTO' && hasHybridDbPermission && (
-                            <div className="mt-4">
+                            <div className="mt-4 space-y-3">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -3113,6 +3256,32 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                   </div>
                                 </div>
                                 <ChevronLeft size={18} className="text-orange-500 group-hover:-translate-x-1 transition-transform" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const { localDb } = await import('../lib/local-db');
+                                    const schemas = await localDb.getAllTableSchemas();
+                                    setDbSchemas(schemas);
+                                    setShowSchemaModal(true);
+                                  } catch (e) {
+                                    alert('حدث خطأ أثناء جلب الجداول المحلية');
+                                  }
+                                }}
+                                className="w-full flex items-center justify-between p-4 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/25 hover:border-indigo-500/40 rounded-2xl transition-all font-cairo cursor-pointer group text-right"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 bg-indigo-500 text-white rounded-xl shadow-[0_0_12px_rgba(99,102,241,0.3)] group-hover:scale-105 transition-transform">
+                                    <Database size={18} />
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="block text-sm font-bold text-white">مستكشف قاعدة البيانات المحلية</span>
+                                    <span className="block text-[10px] text-gray-400 mt-0.5">عرض هيكل الجداول والحقول في قاعدة البيانات المحلية</span>
+                                  </div>
+                                </div>
+                                <ChevronLeft size={18} className="text-indigo-500 group-hover:-translate-x-1 transition-transform" />
                               </button>
                             </div>
                           )}
@@ -3822,6 +3991,70 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                 >
                   إغلاق النافذة
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {/* Local Database Schema Modal */}
+        {showSchemaModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 md:p-6"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[#111111] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              dir="rtl"
+            >
+              <div className="p-5 md:p-6 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#111111]/80 backdrop-blur-md z-10">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-2xl border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+                    <Database size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-black text-white font-cairo">مستكشف قاعدة البيانات المحلية</h2>
+                    <p className="text-xs text-gray-400 mt-1 font-cairo">جداول النظام والحقول المنشأة في قاعدة SQLite</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSchemaModal(false)}
+                  className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-5 md:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+                {Object.entries(dbSchemas).map(([tableName, columns]) => {
+                  const cols = columns as string[];
+                  return (
+                  <div key={tableName} className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                    <h3 className="text-indigo-400 font-bold mb-3 flex items-center gap-2">
+                      <Database size={16} />
+                      {tableName}
+                      <span className="text-xs bg-white/10 text-white px-2 py-0.5 rounded-full mr-auto">
+                        {cols.length} حقول
+                      </span>
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {cols.map(col => (
+                        <span key={col} className="bg-black/50 border border-white/5 px-2 py-1 rounded-lg text-xs font-mono text-gray-300">
+                          {col}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )})}
+                
+                {Object.keys(dbSchemas).length === 0 && (
+                  <div className="text-center py-10 text-gray-500">
+                    لا توجد جداول أو لم يتم تهيئة القاعدة
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

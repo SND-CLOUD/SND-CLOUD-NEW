@@ -80,7 +80,7 @@ export default function MaintenanceActionForm({
     // Shop settings
     const loadShopConfig = async () => {
       try {
-        const docSnap = await getDoc(doc(db, 'settings', 'shop'));
+        const docSnap = await getDoc(doc(db, 'company_details', 'main_details'));
         if (docSnap.exists()) {
           setShopConfig(docSnap.data());
           return;
@@ -94,7 +94,7 @@ export default function MaintenanceActionForm({
       }
     };
 
-    const unsubscribeShopSettings = onSnapshot(doc(db, 'settings', 'shop'), (docSnap) => {
+    const unsubscribeShopSettings = onSnapshot(doc(db, 'company_details', 'main_details'), (docSnap) => {
       if (docSnap.exists()) {
         setShopConfig(docSnap.data());
       }

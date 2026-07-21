@@ -53,7 +53,8 @@ export const serverTimestamp = () => ({
   _date: new Date(),
   toDate: function() { return this._date; },
   toMillis: function() { return this._date.getTime(); },
-  toISOString: function() { return this._date.toISOString(); }
+  toISOString: function() { return this._date.toISOString(); },
+  toJSON: function() { return this._date.toISOString(); }
 });
 
 // --- Delegation to ProviderFactory ---

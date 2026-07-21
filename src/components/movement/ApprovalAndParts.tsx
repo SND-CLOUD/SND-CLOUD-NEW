@@ -89,7 +89,7 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
 
   // Fetch shop config
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'shop')).then((snap) => {
+    getDoc(doc(db, 'company_details', 'main_details')).then((snap) => {
       if (snap.exists()) {
         setShopConfig(snap.data());
       }
@@ -768,7 +768,8 @@ export default function ApprovalAndParts({ user, onBack, initialInvoice }: { use
 
           batch.update(doc(db, 'invoice_items', originalItem.id!), {
             quantity: rem,
-            cost: (unitCost * rem)
+            cost: (unitCost * rem),
+            updatedAt: serverTimestamp()
           });
         } else {
           // update fully
