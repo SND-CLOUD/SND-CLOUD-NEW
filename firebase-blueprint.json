@@ -510,6 +510,30 @@
           "type": "string"
         }
       }
+    },
+    "UserDevice": {
+      "title": "User Device",
+      "description": "System user device records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deviceNumber": { "type": "number" },
+        "serialImei": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "linkedUserName": { "type": "string" },
+        "linkedUserId": { "type": "string" },
+        "status": { "type": "string" },
+        "networkStatus": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" },
+        "lastLogout": { "type": "string" },
+        "blockDate": { "type": "string" },
+        "createdByUserId": { "type": "string" },
+        "createdByUserName": { "type": "string" },
+        "notes": { "type": "string" },
+        "isFrozen": { "type": "boolean" }
+      },
+      "required": ["serialImei", "deviceName", "linkedUserName"]
     }
   },
   "firestore": {
@@ -576,6 +600,10 @@
     "/engineers/{engineerId}": {
       "schema": "Engineer",
       "description": "Engineer records"
+    },
+    "/user_devices/{deviceId}": {
+      "schema": "UserDevice",
+      "description": "System user devices"
     },
     "/document_outputs/{id}": {
       "schema": "DocumentOutput",

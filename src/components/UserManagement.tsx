@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, setDoc, where, getDocs, serverTimestamp } from '../firebase';
 import { db } from '../firebase';
 import { User, AppPermissions } from '../types';
-import { ShieldCheck, UserPlus, Trash2, Edit2, ShieldAlert, Loader2, Save, X, ArrowLeft, Check, Lock, Package, Wallet, Users, FileText, BarChart, Settings, UserCircle, Cpu, UserCheck, UserX, Eye, EyeOff, Power, Database } from 'lucide-react';
+import { Smartphone, Wifi, WifiOff, CheckCircle2, PauseCircle, XCircle, ShieldCheck, UserPlus, Trash2, Edit2, ShieldAlert, Loader2, Save, X, ArrowLeft, Check, Lock, Package, Wallet, Users, FileText, BarChart, Settings, UserCircle, Cpu, UserCheck, UserX, Eye, EyeOff, Power, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 
 export default function UserManagement({ currentUser }: { currentUser: User }) {
   const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
+  const [jobTitles, setJobTitles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Password visibility states
@@ -24,17 +26,17 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
   const [addConfirmPassword, setAddConfirmPassword] = useState('');
 
   const DEFAULT_PERMISSIONS: AppPermissions = {
-    inventory: { view: true, add: true, edit: true, delete: false, print: true },
-    vault: { view: true, add: true, edit: true, delete: false, print: true },
-    customers: { view: true, add: true, edit: true, delete: false, print: true },
-    invoices: { view: true, add: true, edit: true, delete: false, print: true },
-    reports: { view: true, print: true },
-    settings: { view: false, edit: false },
-    settings_main_data: { view: false, add: false, edit: false, delete: false, print: false },
-    settings_devices_engineers: { view: false, add: false, edit: false, delete: false, print: false },
-    settings_device_management: { view: false, add: false, edit: false, delete: false, print: false },
-    settings_users: { view: false, add: false, edit: false, delete: false, print: false },
-    settings_hybrid_db: { view: false, edit: false }
+    inventory: { view: true, add: true, edit: true, delete: false, print: true, advancedView: false },
+    vault: { view: true, add: true, edit: true, delete: false, print: true, advancedView: false },
+    customers: { view: true, add: true, edit: true, delete: false, print: true, advancedView: false },
+    invoices: { view: true, add: true, edit: true, delete: false, print: true, advancedView: false },
+    reports: { view: true, print: true, advancedView: false },
+    settings: { view: false, edit: false, advancedView: false },
+    settings_main_data: { view: false, add: false, edit: false, delete: false, print: false, advancedView: false },
+    settings_devices_engineers: { view: false, add: false, edit: false, delete: false, print: false, advancedView: false },
+    settings_device_management: { view: false, add: false, edit: false, delete: false, print: false, advancedView: false },
+    settings_users: { view: false, add: false, edit: false, delete: false, print: false, advancedView: false },
+    settings_hybrid_db: { view: false, edit: false, advancedView: false }
   };
 
   const [formData, setFormData] = useState<Partial<User>>({ 
@@ -165,18 +167,19 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     settings_hybrid_db: { label: 'التحكم المتقدم بالوضع الهجين', icon: Database }
   };
 
-  const PERMISSIONS_ORDER = ['view', 'add', 'edit', 'delete', 'print'];
+  const PERMISSIONS_ORDER = ['view', 'add', 'edit', 'delete', 'print', 'advancedView'];
   
   const PERMISSION_LABELS: Record<string, string> = {
     view: 'عرض',
     add: 'إضافة',
     edit: 'تعديل',
     delete: 'حذف',
-    print: 'طباعة'
+    print: 'طباعة',
+    advancedView: 'عرض متقدم'
   };
 
-  const renderPermissionsTable = (isEditing: boolean = false) => {
-    const currentPerms = isEditing ? (editingUser?.permissions || DEFAULT_PERMISSIONS) : (formData.permissions || DEFAULT_PERMISSIONS);
+  const renderPermissionsTable = (isEditing: boolean = false, targetUser?: User | null) => {
+    const currentPerms = targetUser ? (targetUser.permissions || DEFAULT_PERMISSIONS) : (isEditing ? (editingUser?.permissions || DEFAULT_PERMISSIONS) : (formData.permissions || DEFAULT_PERMISSIONS));
     const sections: (keyof AppPermissions)[] = [
       'inventory', 
       'vault', 
@@ -304,6 +307,17 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
       setUsers(s.docs.map(d => ({ id: d.id, ...d.data() } as User)));
       setLoading(false);
     });
+    
+    // Fetch job titles
+    const fetchJobs = async () => {
+      try {
+        const jQ = collection(db, 'job_titles');
+        const jSnap = await getDocs(jQ);
+        setJobTitles(jSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {}
+    };
+    fetchJobs();
+    
     return () => unsubscribe();
   }, []);
 
@@ -378,9 +392,11 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
     setLoading(true);
     try {
       if (isPasswordOnlyView) {
-        // Only password update
+        // Password, phone, and email update
         await updateDoc(doc(db, 'users', editingUser.id), {
           password: editingUser.password,
+          phone: editingUser.phone || '',
+          email: editingUser.email || '',
           updatedAt: serverTimestamp()
         });
       } else {
@@ -388,6 +404,8 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
         await updateDoc(doc(db, 'users', editingUser.id), {
           name: editingUser.name,
           password: editingUser.password,
+          phone: editingUser.phone || '',
+          email: editingUser.email || '',
           role: editingUser.role,
           permissions: editingUser.permissions || DEFAULT_PERMISSIONS,
           updatedAt: serverTimestamp()
@@ -476,8 +494,18 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" dir="rtl">
-        {users.filter(u => canViewAllUsers || u.id === currentUser.id).map(u => {
+      <div className="grid grid-cols-1 gap-4" dir="rtl">
+        {users.filter(u => {
+          const isTargetAdmin = u.isPrimary || u.username === 'admin' || u.role === 'admin' || u.name === 'المدير العام';
+          const isCurrentUserGM = currentUser.isPrimary || currentUser.username === 'admin' || currentUser.role === 'admin' || currentUser.name === 'المدير العام';
+
+          // General Manager (المدير العام) user does not appear in users page unless logged-in user is General Manager
+          if (isTargetAdmin && !isCurrentUserGM) {
+            return false;
+          }
+
+          return canViewAllUsers || u.id === currentUser.id;
+        }).map(u => {
           const isUserAdmin = u.isPrimary || u.username === 'admin';
           const isUserActive = (u.isActive as any) === undefined || (u.isActive as any) === null || (u.isActive as any) === true || (u.isActive as any) === 1 || (u.isActive as any) === 'true' || (u.isActive as any) === '1';
           const isCurrentUserGM = currentUser.isPrimary || currentUser.username === 'admin';
@@ -485,94 +513,127 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
             ? isCurrentUserGM 
             : (isCurrentUserGM || u.id === currentUser.id || canManageUsers);
 
+          const accountStatus = u.account_status || (isUserActive ? 'نشط' : 'معطل');
+
           return (
-            <div key={u.id} className="bg-[#242424] p-4 sm:p-5 rounded-2xl border border-white/5 flex flex-row items-center justify-between gap-3 sm:gap-4 group">
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                 <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center font-bold text-base sm:text-lg shrink-0 ${isUserAdmin ? 'bg-orange-600 text-white' : 'bg-white/5 text-gray-400'}`}>
-                    {u.name.charAt(0)}
-                 </div>
-                 <div className="min-w-0">
-                    <h3 className="font-bold flex items-center gap-1.5 sm:gap-2 flex-wrap text-white font-cairo text-sm sm:text-base leading-tight">
-                      {u.name}
-                      <span className="text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded border border-white/5 font-mono">#{u.userNumber || (isUserAdmin ? 100 : '')}</span>
-                      {isUserAdmin && <span className="text-[10px] bg-orange-600/20 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase tracking-widest font-black">المدير العام</span>}
-                      <span className="text-[10px] text-gray-500">@{u.username}</span>
-                      
-                      {/* Status badge */}
-                      {isUserAdmin ? (
-                        <span className="text-[10px] bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded border border-green-500/20 font-black">نشط دائم</span>
-                      ) : !isUserActive ? (
-                        <span className="text-[10px] bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20 font-black">معطل</span>
-                      ) : (
-                        <span className="text-[10px] bg-green-500/10 text-green-500 px-1.5 py-0.5 rounded border border-green-500/20 font-black">نشط</span>
-                      )}
-                    </h3>
-                    <p className="text-xs text-gray-500 font-cairo mt-0.5">{ROLE_MAP[u.role as keyof typeof ROLE_MAP] || u.role}</p>
-                 </div>
+            <div key={u.id} className="bg-[#242424] p-3 sm:p-4 rounded-2xl border border-white/5 flex flex-col gap-3 group">
+              {/* First Row */}
+              <div className="flex items-center flex-wrap gap-2 sm:gap-3">
+                {/* Initial */}
+                <div className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs shrink-0 ${isUserAdmin ? 'bg-orange-600 text-white' : 'bg-white/5 text-gray-400'}`}>
+                  {u.name.charAt(0)}
+                </div>
+                
+                {/* User Number */}
+                <span className="text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded border border-white/5 font-mono">
+                  {u.userNumber || (isUserAdmin ? 100 : '')}
+                </span>
+
+                {/* Full Name */}
+                <span className="font-bold text-white text-sm font-cairo">
+                  {u.name}
+                </span>
+
+                {/* Username */}
+                {u.username !== 'admin' && u.username !== 'rd' && (
+                  <span className="text-[10px] text-gray-500">@{u.username}</span>
+                )}
+
+                {/* Role */}
+                <span className="text-[10px] text-gray-400 font-cairo bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                  {ROLE_MAP[u.role as keyof typeof ROLE_MAP] || u.role}
+                </span>
+
+                {/* Device Number */}
+                <div className="flex items-center gap-1 text-[10px] bg-white/5 text-gray-300 px-1.5 py-0.5 rounded border border-white/10 font-mono">
+                  <Smartphone size={12} className="text-amber-500" />
+                  <span>{u.linked_device_id || 'بدون'}</span>
+                </div>
+
+                {/* Network Status */}
+                <div className="flex items-center gap-1" title={u.network_status || 'غير متصل'}>
+                  {u.network_status === 'متصل' ? (
+                    <Wifi size={14} className="text-emerald-500" />
+                  ) : (
+                    <WifiOff size={14} className="text-gray-500" />
+                  )}
+                </div>
+
+                {/* Account Status */}
+                <div className="flex items-center gap-1 mr-auto" title={accountStatus}>
+                  {accountStatus === 'نشط' ? (
+                    <CheckCircle2 size={16} className="text-emerald-500" />
+                  ) : accountStatus === 'معطل' ? (
+                    <PauseCircle size={16} className="text-yellow-500" />
+                  ) : (
+                    <XCircle size={16} className="text-red-500" />
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                 {!hasUsersPermission ? (
-                   // Only show "تعديل كلمة المرور" (Change Password) button if they are themselves AND they are General Manager
-                   u.id === currentUser.id && (
-                     <button
-                       onClick={() => {
-                         setEditingUser(u);
-                         setEditingConfirmPassword(u.password || '');
-                         setShowPassword(false);
-                         setShowConfirmPassword(false);
-                       }}
-                       className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-cairo shadow-lg shadow-orange-950/20 cursor-pointer"
-                       title="تعديل كلمة المرور"
-                     >
-                       <Lock size={13} />
-                       <span>تعديل كلمة المرور</span>
-                     </button>
-                   )
-                 ) : (
-                   // If they have settings_users permissions, we render prominent Edit and Activate buttons
-                   <>
-                     {/* Edit Button */}
-                     {canEditThisUser && (
-                       <button 
+
+              {/* Second Row */}
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/5">
+                {/* Job Title */}
+                <span className="text-xs text-gray-500 font-cairo font-bold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+                  {jobTitles.find(j => j.id === u.job_title_id)?.title || 'بدون مسمى وظيفي'}
+                </span>
+
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                   {!hasUsersPermission ? (
+                     // Only show "تعديل كلمة المرور" (Change Password) button if they are themselves AND they are General Manager
+                     u.id === currentUser.id && (
+                       <button
                          onClick={() => {
                            setEditingUser(u);
                            setEditingConfirmPassword(u.password || '');
                            setShowPassword(false);
                            setShowConfirmPassword(false);
                          }}
-                         className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1 text-[11px] sm:text-xs font-bold font-cairo border shadow-sm bg-orange-500/15 border-orange-500/30 text-orange-400 hover:bg-orange-500 hover:text-white cursor-pointer hover:shadow-orange-950/10"
-                         title="تعديل"
+                         className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/20 font-bold rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-cairo shadow-lg shadow-orange-950/20 cursor-pointer"
+                         title="تعديل كلمة المرور"
                        >
-                         <Edit2 size={13} />
-                         <span>تعديل</span>
+                         <Lock size={13} />
+                         <span>تعديل كلمة المرور</span>
                        </button>
-                     )}
+                     )
+                   ) : (
+                     // If they have settings_users permissions, we render prominent Edit and Activate buttons
+                     <>
+                       {/* Edit Button */}
+                       {canEditThisUser && (
+                         <button 
+                           onClick={() => {
+                             setEditingUser(u);
+                             setEditingConfirmPassword(u.password || '');
+                             setShowPassword(false);
+                             setShowConfirmPassword(false);
+                           }}
+                           className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1 text-[11px] sm:text-xs font-bold font-cairo border shadow-sm bg-orange-500/15 border-orange-500/30 text-orange-400 hover:bg-orange-500 hover:text-white cursor-pointer hover:shadow-orange-950/10"
+                           title="تعديل"
+                         >
+                           <Edit2 size={13} />
+                           <span>تعديل</span>
+                         </button>
+                       )}
 
-                     {/* Activation / Deactivation Toggle button - NOT shown for admin */}
-                     {!isUserAdmin && canManageUsers && (
+                       {/* Advanced View Button */}
                        <button 
-                         onClick={() => toggleUserActive(u)}
-                         className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1 text-[11px] sm:text-xs font-bold font-cairo border shadow-sm ${
-                           !isUserActive
-                             ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white cursor-pointer hover:shadow-emerald-950/10'
-                             : 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white cursor-pointer hover:shadow-red-950/10'
-                         }`}
-                         title={!isUserActive ? 'تفعيل الحساب' : 'تعطيل الحساب'}
+                         onClick={() => setViewingUser(u)}
+                         className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1 text-[11px] sm:text-xs font-bold font-cairo border shadow-sm bg-blue-500/15 border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white cursor-pointer hover:shadow-blue-950/10"
+                         title="عرض تفاصيل"
                        >
-                         {!isUserActive ? <UserCheck size={13} /> : <UserX size={13} />}
-                         <span>
-                           {!isUserActive ? 'تفعيل' : 'تعطيل'}
-                         </span>
+                         <Eye size={13} />
+                         <span>عرض</span>
                        </button>
-                     )}
-                   </>
-                 )}
+                     </>
+                   )}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
-
       {/* Add User Modal */}
       <AnimatePresence>
         {showAddModal && (
@@ -581,7 +642,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#1a1a1a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-3xl p-6 sm:p-8 w-full max-w-md h-full sm:h-auto shadow-2xl relative overflow-y-auto"
+              className="bg-[#1a1a1a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-3xl p-6 sm:p-8 w-full max-w-3xl h-full sm:h-auto sm:max-h-[90vh] shadow-2xl relative overflow-y-auto"
             >
             {/* Unified Header for Modal */}
             <div className="flex items-center gap-2 mb-6" dir="rtl">
@@ -593,37 +654,124 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
               </button>
               <h3 className="text-xl font-bold text-white m-0 p-0 font-cairo">{t('users.registerUser')}</h3>
             </div>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                  <label className="text-xs font-bold text-gray-500 uppercase mr-1">الاسم الكامل</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right"
-                  />
-                </div>
-                <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                  <label className="text-xs font-bold text-gray-500 uppercase mr-1">اسم المستخدم (بالإنجليزي)</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '') })}
-                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-left font-mono"
-                  />
+              <form onSubmit={handleAddUser} className="space-y-4 text-right font-cairo" dir="rtl">
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Name */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">الاسم الكامل <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      value={formData.name || ''}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right"
+                    />
+                  </div>
+
+                  {/* Job Title */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">المسمى الوظيفي</label>
+                    <select
+                      value={formData.job_title_id || ''}
+                      onChange={(e) => setFormData({ ...formData, job_title_id: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right appearance-none"
+                    >
+                      <option value="">لا يوجد</option>
+                      {jobTitles.map(job => (
+                        <option key={job.id} value={job.id}>{job.title}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Phone */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">رقم الهاتف</label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setFormData({...formData, phone: 'لا يوجد'})} className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap">لا يوجد</button>
+                      <input 
+                        type="text" 
+                        value={formData.phone || ''}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Email */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">البريد الإلكتروني</label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setFormData({...formData, email: 'لا يوجد'})} className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap">لا يوجد</button>
+                      <input 
+                        type="text" 
+                        value={formData.email || ''}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-left font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Account Status */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">حالة الحساب</label>
+                    <select
+                      value={formData.account_status || 'نشط'}
+                      onChange={(e) => setFormData({ ...formData, account_status: e.target.value as any })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right appearance-none"
+                    >
+                      <option value="نشط">نشط</option>
+                      <option value="معطل">معطل</option>
+                      <option value="موقوف">موقوف</option>
+                    </select>
+                  </div>
+
+                  {/* Device Access Type */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">صلاحية استخدام الأجهزة</label>
+                    <select
+                      value={formData.device_access_type || 'عام'}
+                      onChange={(e) => setFormData({ ...formData, device_access_type: e.target.value as any })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right appearance-none"
+                    >
+                      <option value="عام">عام (كل الأجهزة)</option>
+                      <option value="مخصص">مخصص (جهاز محدد فقط)</option>
+                    </select>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">ملاحظات</label>
+                    <input 
+                      type="text"
+                      value={formData.notes || ''}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right"
+                    />
+                  </div>
+
+                  {/* Username */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">اسم المستخدم (بالإنجليزي) <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      value={formData.username || ''}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '') })}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-left font-mono"
+                    />
+                  </div>
                 </div>
                 
                 {/* Password Fields with Eye Icons */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">كلمة المرور</label>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">كلمة المرور <span className="text-red-500">*</span></label>
                     <div className="relative">
                       <input 
                         type={showAddPassword ? "text" : "password"} 
                         required
-                        value={formData.password}
+                        value={formData.password || ''}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
                       />
@@ -636,13 +784,13 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                       </button>
                     </div>
                   </div>
-                  <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">تأكيد كلمة المرور</label>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-500 uppercase mr-1">تأكيد كلمة المرور <span className="text-red-500">*</span></label>
                     <div className="relative">
                       <input 
                         type={showAddConfirmPassword ? "text" : "password"} 
                         required
-                        value={addConfirmPassword}
+                        value={addConfirmPassword || ''}
                         onChange={(e) => setAddConfirmPassword(e.target.value)}
                         className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
                       />
@@ -661,10 +809,10 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                   <p className="text-xs text-red-500 font-bold text-right font-cairo" dir="rtl">كلمتا المرور غير متطابقتين!</p>
                 )}
 
-                <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                  <label className="text-xs font-bold text-gray-500 uppercase mr-1">صلاحية المستخدم</label>
+                <div className="space-y-1.5 mt-4">
+                  <label className="text-xs font-bold text-gray-500 uppercase mr-1">نوع الصلاحية</label>
                   <select 
-                    value={formData.role}
+                    value={formData.role || 'data_entry'}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
                     className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none appearance-none text-white text-right"
                   >
@@ -677,7 +825,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
 
                 <button 
                   type="submit" 
-                  disabled={loading || (formData.password !== addConfirmPassword)} 
+                  disabled={loading || (formData.password !== addConfirmPassword) || !formData.name?.trim() || !formData.username?.trim()} 
                   className="w-full bg-orange-600 hover:bg-orange-700 py-3 rounded-2xl font-bold mt-4 flex items-center justify-center gap-2 font-cairo disabled:opacity-50"
                 >
                   {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'تسجيل المستخدم'}
@@ -699,7 +847,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#1a1a1a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-3xl p-6 sm:p-8 w-full max-w-md h-full sm:h-auto shadow-2xl relative overflow-y-auto"
+                className={`bg-[#1a1a1a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-3xl p-6 sm:p-8 w-full ${isPasswordOnly ? 'max-w-md' : 'max-w-3xl'} h-full sm:h-auto sm:max-h-[90vh] shadow-2xl relative overflow-y-auto`}
               >
               {/* Unified Header for Modal */}
               <div className="flex items-center gap-2 mb-2" dir="rtl">
@@ -710,22 +858,23 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                   <X size={18} />
                 </button>
                 <h3 className="text-xl font-bold text-white m-0 p-0 font-cairo">
-                  {isPasswordOnly ? 'تعديل كلمة المرور' : t('users.editUser')}
+                  {isPasswordOnly ? 'تعديل كلمة المرور والبيانات' : t('users.editUser')}
                 </h3>
               </div>
                 <p className="text-xs text-gray-500 mb-6 uppercase tracking-wider text-right">Account ID: {editingUser.id}</p>
                 
                 <form onSubmit={handleUpdateUser} className="space-y-4">
-                  {/* General Manager View: Only password change fields */}
+                  {/* General Manager / Password Change View */}
                   {isPasswordOnly ? (
                     <div className="space-y-4">
+                      {/* Password Fields */}
                       <div className="space-y-1.5 text-right font-cairo" dir="rtl">
                         <label className="text-xs font-bold text-gray-500 uppercase mr-1">كلمة المرور الجديدة</label>
                         <div className="relative">
                           <input 
                             type={showPassword ? "text" : "password"} 
                             required
-                            value={editingUser.password}
+                            value={editingUser.password || ''}
                             onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
                             className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
                           />
@@ -745,7 +894,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                           <input 
                             type={showConfirmPassword ? "text" : "password"} 
                             required
-                            value={editingConfirmPassword}
+                            value={editingConfirmPassword || ''}
                             onChange={(e) => setEditingConfirmPassword(e.target.value)}
                             className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
                           />
@@ -762,69 +911,368 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                       {editingUser.password && editingConfirmPassword && editingUser.password !== editingConfirmPassword && (
                         <p className="text-xs text-red-500 font-bold text-right font-cairo" dir="rtl">كلمتا المرور غير متطابقتين!</p>
                       )}
+
+                      {/* Phone Field */}
+                      <div className="space-y-1.5 text-right font-cairo" dir="rtl">
+                        <label className="text-xs font-bold text-gray-500 uppercase mr-1">رقم الهاتف السابق / الحالي</label>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button" 
+                            onClick={() => setEditingUser({ ...editingUser, phone: 'لا يوجد' })} 
+                            className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap cursor-pointer"
+                          >
+                            لا يوجد
+                          </button>
+                          <input 
+                            type="text" 
+                            value={editingUser.phone || ''}
+                            onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                            placeholder="رقم الهاتف"
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-right font-sans"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Email Field */}
+                      <div className="space-y-1.5 text-right font-cairo" dir="rtl">
+                        <label className="text-xs font-bold text-gray-500 uppercase mr-1">البريد الإلكتروني</label>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button" 
+                            onClick={() => setEditingUser({ ...editingUser, email: 'لا يوجد' })} 
+                            className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap cursor-pointer"
+                          >
+                            لا يوجد
+                          </button>
+                          <input 
+                            type="text" 
+                            value={editingUser.email || ''}
+                            onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                            placeholder="البريد الإلكتروني"
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none text-white text-left font-sans"
+                          />
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     // Regular User Edit View
-                    <>
-                      <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                        <label className="text-xs font-bold text-gray-500 uppercase mr-1">{t('users.fullName')}</label>
-                        <input 
-                          type="text" 
-                          required
-                          disabled={!canManageUsers}
-                          value={editingUser.name}
-                          onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right"
-                        />
-                      </div>
-                      <div className="space-y-1.5 text-right font-cairo" dir="rtl">
-                        <label className="text-xs font-bold text-gray-500 uppercase mr-1">{t('users.newPassword')}</label>
-                        <div className="relative">
+                    <div className="text-right font-cairo" dir="rtl">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Name */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">الاسم الكامل <span className="text-red-500">*</span></label>
                           <input 
-                            type={showPassword ? "text" : "password"} 
+                            type="text" 
                             required
-                            value={editingUser.password}
-                            onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
-                            className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
+                            disabled={!canManageUsers}
+                            value={editingUser.name || ''}
+                            onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right"
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                        </div>
+
+                        {/* Job Title */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">المسمى الوظيفي</label>
+                          <select
+                            value={editingUser.job_title_id || ''}
+                            disabled={!canManageUsers}
+                            onChange={(e) => setEditingUser({ ...editingUser, job_title_id: e.target.value })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right appearance-none"
                           >
-                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                          </button>
+                            <option value="">لا يوجد</option>
+                            {jobTitles.map(job => (
+                              <option key={job.id} value={job.id}>{job.title}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Phone */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">رقم الهاتف</label>
+                          <div className="flex gap-2">
+                            <button type="button" disabled={!canManageUsers} onClick={() => setEditingUser({...editingUser, phone: 'لا يوجد'})} className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap disabled:opacity-50">لا يوجد</button>
+                            <input 
+                              type="text" 
+                              disabled={!canManageUsers}
+                              value={editingUser.phone || ''}
+                              onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Email */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">البريد الإلكتروني</label>
+                          <div className="flex gap-2">
+                            <button type="button" disabled={!canManageUsers} onClick={() => setEditingUser({...editingUser, email: 'لا يوجد'})} className="px-3 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-400 hover:text-white whitespace-nowrap disabled:opacity-50">لا يوجد</button>
+                            <input 
+                              type="email" 
+                              disabled={!canManageUsers}
+                              value={editingUser.email || ''}
+                              onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-left font-sans"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Account Status */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">حالة الحساب</label>
+                          <select
+                            value={editingUser.account_status || 'نشط'}
+                            disabled={!canManageUsers}
+                            onChange={(e) => setEditingUser({ ...editingUser, account_status: e.target.value as any })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right appearance-none"
+                          >
+                            <option value="نشط">نشط</option>
+                            <option value="معطل">معطل</option>
+                            <option value="موقوف">موقوف</option>
+                          </select>
+                        </div>
+
+                        {/* Device Access Type */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">صلاحية استخدام الأجهزة</label>
+                          <select
+                            value={editingUser.device_access_type || 'عام'}
+                            disabled={!canManageUsers}
+                            onChange={(e) => setEditingUser({ ...editingUser, device_access_type: e.target.value as any })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right appearance-none"
+                          >
+                            <option value="عام">عام (كل الأجهزة)</option>
+                            <option value="مخصص">مخصص (جهاز محدد فقط)</option>
+                          </select>
+                        </div>
+
+                        {/* Notes */}
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">ملاحظات</label>
+                          <input 
+                            type="text"
+                            disabled={!canManageUsers}
+                            value={editingUser.notes || ''}
+                            onChange={(e) => setEditingUser({ ...editingUser, notes: e.target.value })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right"
+                          />
+                        </div>
+
+                        {/* Username */}
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">اسم المستخدم (بالإنجليزي) <span className="text-red-500">*</span></label>
+                          <input 
+                            type="text" 
+                            required
+                            disabled={!canManageUsers}
+                            value={editingUser.username || ''}
+                            onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '') })}
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-left font-mono"
+                          />
                         </div>
                       </div>
-                      <div className="space-y-1.5 text-right font-cairo" dir="rtl">
+
+                      {/* Password Edit Fields */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">{t('users.newPassword')}</label>
+                          <div className="relative">
+                            <input 
+                              type={showPassword ? "text" : "password"} 
+                              required
+                              value={editingUser.password || ''}
+                              onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                            >
+                              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-gray-500 uppercase mr-1">تأكيد كلمة المرور</label>
+                          <div className="relative">
+                            <input 
+                              type={showConfirmPassword ? "text" : "password"} 
+                              required
+                              value={editingConfirmPassword || ''}
+                              onChange={(e) => setEditingConfirmPassword(e.target.value)}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 focus:border-orange-500 outline-none text-white text-right font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                            >
+                              {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {editingUser.password && editingConfirmPassword && editingUser.password !== editingConfirmPassword && (
+                        <p className="text-xs text-red-500 font-bold text-right font-cairo mt-2" dir="rtl">كلمتا المرور غير متطابقتين!</p>
+                      )}
+
+                      <div className="space-y-1.5 mt-4">
                         <label className="text-xs font-bold text-gray-500 uppercase mr-1">{t('users.role')}</label>
                         <select 
-                          value={editingUser.role}
+                          value={editingUser.role || 'data_entry'}
                           disabled={!canManageUsers}
                           onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as any })}
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right"
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 focus:border-orange-500 outline-none disabled:opacity-50 text-white text-right appearance-none"
                         >
                           <option value="data_entry">{ROLE_MAP.data_entry} (Data Entry)</option>
                           <option value="manager">{ROLE_MAP.manager} (Manager)</option>
                         </select>
                       </div>
 
-                      {renderPermissionsTable(true)}
-                    </>
+                      <div className="mt-4">
+                        {renderPermissionsTable(true)}
+                      </div>
+                    </div>
                   )}
 
                   <button 
                     type="submit" 
-                    disabled={loading || (isPasswordOnly && editingUser.password !== editingConfirmPassword)} 
+                    disabled={loading || (isPasswordOnly && editingUser.password !== editingConfirmPassword) || (!isPasswordOnly && editingUser.password !== editingConfirmPassword)} 
                     className="w-full bg-orange-600 hover:bg-orange-700 py-3 rounded-2xl font-bold mt-4 flex items-center justify-center gap-2 font-cairo disabled:opacity-50"
                   >
-                    {loading ? <Loader2 className="animate-spin" /> : t('users.applyChanges')}
+                    {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : t('users.saveChanges')}
                   </button>
                 </form>
-              </motion.div>
+            </motion.div>
             </div>
           );
         })()}
+
+        {/* View User Modal */}
+        {viewingUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#1a1a1a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-3xl p-6 sm:p-8 w-full max-w-3xl h-full sm:h-auto sm:max-h-[90vh] shadow-2xl relative overflow-y-auto font-cairo text-right"
+              dir="rtl"
+            >
+              {/* Unified Header for Modal */}
+              <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
+                <button 
+                  onClick={() => setViewingUser(null)} 
+                  className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+                <h3 className="text-xl font-bold text-white m-0 p-0">عرض متقدم (تفاصيل المستخدم)</h3>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Account ID */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">معرف الحساب (ID)</label>
+                    <p className="text-sm text-gray-300 font-mono">{viewingUser.id || '-'}</p>
+                  </div>
+                  {/* User Number */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">رقم المستخدم</label>
+                    <p className="text-sm text-gray-300 font-mono">{viewingUser.userNumber || (viewingUser.username === 'admin' ? 100 : '-')}</p>
+                  </div>
+                  {/* Name */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">الاسم الكامل</label>
+                    <p className="text-sm text-white font-bold">{viewingUser.name || '-'}</p>
+                  </div>
+                  {/* Username */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">اسم المستخدم (للدخول)</label>
+                    <p className="text-sm text-amber-400 font-mono font-bold">@{viewingUser.username}</p>
+                  </div>
+                  {/* Job Title */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">المسمى الوظيفي</label>
+                    <p className="text-sm text-white font-bold">{jobTitles.find(j => j.id === viewingUser.job_title_id)?.title || 'لا يوجد'}</p>
+                  </div>
+                  {/* Role */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">نوع الصلاحية بالبرنامج</label>
+                    <p className="text-sm text-white font-bold">{ROLE_MAP[viewingUser.role as keyof typeof ROLE_MAP] || viewingUser.role}</p>
+                  </div>
+                  {/* Phone */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">رقم الهاتف</label>
+                    <p className="text-sm text-white font-bold font-mono text-right" dir="ltr">{viewingUser.phone || 'لا يوجد'}</p>
+                  </div>
+                  {/* Email */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">البريد الإلكتروني</label>
+                    <p className="text-sm text-white font-sans">{viewingUser.email || 'لا يوجد'}</p>
+                  </div>
+                  {/* Account Status */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">حالة الحساب</label>
+                    <p className={`text-sm font-bold ${viewingUser.account_status === 'معطل' || viewingUser.account_status === 'موقوف' ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {viewingUser.account_status || 'نشط'}
+                    </p>
+                  </div>
+                  {/* Network Status */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">حالة الشبكة</label>
+                    <p className={`text-sm font-bold ${viewingUser.network_status === 'متصل' ? 'text-emerald-400' : 'text-gray-400'}`}>
+                      {viewingUser.network_status || 'غير متصل'}
+                    </p>
+                  </div>
+                  {/* Device Access Type */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">صلاحية استخدام الأجهزة</label>
+                    <p className="text-sm text-white font-bold">{viewingUser.device_access_type || 'عام'}</p>
+                  </div>
+                  {/* Linked Device */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">الجهاز المرتبط</label>
+                    <p className="text-sm text-white font-bold font-mono">{viewingUser.linked_device_id || 'لا يوجد'}</p>
+                  </div>
+                  {/* Notes */}
+                  <div className="space-y-1.5 p-3 bg-white/[0.02] rounded-xl border border-white/5 sm:col-span-2">
+                    <label className="text-[11px] font-bold text-gray-500">ملاحظات</label>
+                    <p className="text-sm text-gray-300">{viewingUser.notes || 'لا يوجد'}</p>
+                  </div>
+                  
+                  {/* Timestamps */}
+                  <div className="space-y-1.5 p-3 bg-black/20 rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">تاريخ التسجيل بالبرنامج</label>
+                    <p className="text-xs text-gray-400 font-mono text-right" dir="ltr">
+                      {viewingUser.created_at || (viewingUser as any).createdAt ? new Date(viewingUser.created_at || (viewingUser as any).createdAt).toLocaleString('ar-EG') : 'غير متوفر'}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 p-3 bg-black/20 rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">تاريخ آخر تعديل</label>
+                    <p className="text-xs text-gray-400 font-mono text-right" dir="ltr">
+                      {viewingUser.updated_at ? new Date(viewingUser.updated_at).toLocaleString('ar-EG') : 'غير متوفر'}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 p-3 bg-black/20 rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">آخر تسجيل دخول</label>
+                    <p className="text-xs text-emerald-500/80 font-mono text-right" dir="ltr">
+                      {viewingUser.last_login || (viewingUser as any).lastLogin ? new Date(viewingUser.last_login || (viewingUser as any).lastLogin).toLocaleString('ar-EG') : 'لم يسجل دخول بعد'}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 p-3 bg-black/20 rounded-xl border border-white/5">
+                    <label className="text-[11px] font-bold text-gray-500">آخر تسجيل خروج</label>
+                    <p className="text-xs text-red-500/80 font-mono text-right" dir="ltr">
+                      {viewingUser.last_logout || (viewingUser as any).lastLogout ? new Date(viewingUser.last_logout || (viewingUser as any).lastLogout).toLocaleString('ar-EG') : 'لم يسجل خروج بعد'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </div>
   );

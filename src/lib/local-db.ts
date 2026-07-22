@@ -95,13 +95,48 @@ class LocalDatabase {
       }
       await this.db.open();
       
+      // Schema Check for Users - drop if old schema
+      try {
+        await this.db.query("SELECT job_title_id FROM users LIMIT 1");
+      } catch {
+        await this.db.execute("DROP TABLE IF EXISTS users");
+      }
+
+      // Schema Check for Devices - drop if old schema
+      try {
+        await this.db.query("SELECT accessType FROM user_devices LIMIT 1");
+      } catch {
+        await this.db.execute("DROP TABLE IF EXISTS user_devices");
+      }
+
       // Create Tables
       await this.db.execute(`
+        CREATE TABLE IF NOT EXISTS job_titles (
+          id TEXT PRIMARY KEY,
+          job_number INTEGER,
+          title TEXT,
+          notes TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY,
           username TEXT UNIQUE,
           password TEXT,
           name TEXT,
+          job_title_id TEXT,
+          phone TEXT,
+          email TEXT,
+          account_status TEXT DEFAULT 'نشط',
+          network_status TEXT DEFAULT 'غير متصل',
+          linked_device_id TEXT,
+          device_access_type TEXT DEFAULT 'عام',
+          last_device_id TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          last_login TEXT,
+          last_logout TEXT,
+          created_by_user_id TEXT,
+          notes TEXT,
           role TEXT,
           isPrimary INTEGER,
           userNumber INTEGER,
@@ -307,6 +342,27 @@ class LocalDatabase {
           type TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS user_devices (
+          id TEXT PRIMARY KEY,
+          deviceNumber INTEGER,
+          serialImei TEXT,
+          deviceName TEXT,
+          accessType TEXT DEFAULT 'عام',
+          linkedUserName TEXT,
+          linkedUserId TEXT,
+          status TEXT,
+          networkStatus TEXT,
+          createdAt TEXT,
+          lastLogin TEXT,
+          lastLogout TEXT,
+          blockDate TEXT,
+          createdByUserId TEXT,
+          createdByUserName TEXT,
+          notes TEXT,
+          isFrozen INTEGER DEFAULT 0,
+          updatedAt TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS fin_funds (
           id TEXT PRIMARY KEY,
           name TEXT,
@@ -342,6 +398,56 @@ class LocalDatabase {
           user_id TEXT
         );
       `);
+
+      // Ensure user_devices table is created for existing databases
+      try {
+        await this.db.run(`
+          CREATE TABLE IF NOT EXISTS user_devices (
+            id TEXT PRIMARY KEY,
+            deviceNumber INTEGER,
+            serialImei TEXT,
+            deviceName TEXT,
+            linkedUserName TEXT,
+            linkedUserId TEXT,
+            status TEXT,
+            networkStatus TEXT,
+            createdAt TEXT,
+            lastLogin TEXT,
+            lastLogout TEXT,
+            blockDate TEXT,
+            createdByUserId TEXT,
+            createdByUserName TEXT,
+            notes TEXT,
+            isFrozen INTEGER DEFAULT 0,
+            updatedAt TEXT
+          );
+        `);
+      } catch (err) {}
+
+      // Ensure all user_devices columns exist on existing databases
+      const devCols = [
+        'deviceNumber INTEGER',
+        'serialImei TEXT',
+        'deviceName TEXT',
+        'linkedUserName TEXT',
+        'linkedUserId TEXT',
+        'status TEXT',
+        'networkStatus TEXT',
+        'createdAt TEXT',
+        'lastLogin TEXT',
+        'lastLogout TEXT',
+        'blockDate TEXT',
+        'createdByUserId TEXT',
+        'createdByUserName TEXT',
+        'notes TEXT',
+        'isFrozen INTEGER DEFAULT 0',
+        'updatedAt TEXT'
+      ];
+      for (const col of devCols) {
+        try {
+          await this.db.run(`ALTER TABLE user_devices ADD COLUMN ${col}`);
+        } catch (e) {}
+      }
 
       // Ensure document_outputs table is created for existing databases as well
       try {

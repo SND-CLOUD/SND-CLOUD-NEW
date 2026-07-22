@@ -103,6 +103,9 @@ service cloud.firestore {
     match /company_details/{docId} {
       allow read, write: if true;
     }
+    match /user_devices/{deviceId} {
+      allow read, write: if true;
+    }
     match /approval_actions/{docId} {
       allow read, write: if true;
     }

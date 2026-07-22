@@ -98,17 +98,17 @@ export interface DeviceType {
 }
 
 export interface AppPermissions {
-  inventory: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  vault: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  customers: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  invoices: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  reports: { view: boolean; print: boolean };
-  settings: { view: boolean; edit: boolean };
-  settings_main_data: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  settings_devices_engineers: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  settings_device_management: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  settings_users: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
-  settings_hybrid_db?: { view: boolean; edit: boolean };
+  inventory: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  vault: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  customers: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  invoices: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  reports: { view: boolean; print: boolean; advancedView?: boolean };
+  settings: { view: boolean; edit: boolean; advancedView?: boolean };
+  settings_main_data: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  settings_devices_engineers: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  settings_device_management: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  settings_users: { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean; advancedView?: boolean };
+  settings_hybrid_db?: { view: boolean; edit: boolean; advancedView?: boolean };
 }
 
 export interface User {
@@ -117,6 +117,20 @@ export interface User {
   username: string;
   password?: string;
   name: string;
+  job_title_id?: string;
+  phone?: string;
+  email?: string;
+  account_status?: 'نشط' | 'معطل' | 'موقوف';
+  network_status?: 'متصل' | 'غير متصل';
+  linked_device_id?: string;
+  device_access_type?: 'عام' | 'مخصص';
+  last_device_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_login?: string;
+  last_logout?: string;
+  created_by_user_id?: string;
+  notes?: string;
   role: 'admin' | 'manager' | 'data_entry';
   isPrimary?: boolean;
   isActive?: boolean;
@@ -198,4 +212,24 @@ export interface ShopConfig {
   commercialRecord?: string;
   taxNumber?: string;
   receiptNotes?: string;
+}
+
+export interface UserDevice {
+  id: string; // المعرف الفريد للجهاز UUID
+  deviceNumber: number; // رقم الجهاز. تلقائي
+  serialImei: string; // الرقم التسلسلي أو imei
+  deviceName: string; // اسم الجهاز في النظام
+  linkedUserName: string; // اسم مستخدم النظام المرتبط بالجهاز
+  linkedUserId?: string; // معرف الحساب للمستخدم المرتبط بالجهاز
+  status: 'نشط' | 'معطل' | 'محظور' | string; // حالة الجهاز
+  networkStatus: 'متصل' | 'غير متصل' | string; // اتصال الشبكة
+  createdAt: any; // تاريخ تسجيل الجهاز
+  lastLogin?: any; // اخر دخول
+  lastLogout?: any; // اخر خروج
+  blockDate?: any; // تاريخ الخروج النهائي (الحظر)
+  createdByUserId?: string; // معرف الحساب لمستخدم النظام الذي أضاف الجهاز في النظام
+  createdByUserName?: string; // اسم مستخدم النظام الذي أضاف الجهاز
+  notes?: string; // ملاحظات اختياري
+  isFrozen?: boolean; // خيار تجميد مؤقت
+  updatedAt?: any;
 }

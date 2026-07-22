@@ -21,6 +21,7 @@ const TABLES_TO_BACKUP = [
   'fin_funds',
   'fin_currencies',
   'fin_payment_methods',
+  'user_devices',
   'document_outputs'
 ];
 

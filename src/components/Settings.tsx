@@ -928,7 +928,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       const categoryTables = ['device_categories', 'device_models'];
       const engineerTables = ['engineers'];
       const shopTables = ['company_details', 'settings'];
-      const financialTables = ['fin_transaction_types', 'fin_funds', 'fin_currencies', 'fin_payment_methods'];
+      const financialTables = ['fin_transaction_types', 'fin_funds', 'fin_currencies', 'fin_payment_methods', 'user_devices'];
 
       const allTables = [...mainTables, ...categoryTables, ...engineerTables, ...shopTables, ...financialTables];
 
@@ -1095,7 +1095,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         'fin_funds',
         'fin_currencies',
         'fin_payment_methods',
-        'document_outputs'
+        'document_outputs',
+        'user_devices'
       ];
 
       const sourceIsCloud = hybridDbType === 'CLOUD';
