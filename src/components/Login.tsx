@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, getDocs, doc, setDoc } from '../firebase';
+import { collection, query, where, getDocs, doc, setDoc, updateDoc } from '../firebase';
 import { db } from '../firebase';
+import { localDb } from '../lib/local-db';
 import { Router, ShieldCheck, Zap, Lock, User as UserIcon, Key, Loader2, Eye, EyeOff, Fingerprint } from 'lucide-react';
 import { User } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -39,6 +40,98 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
     };
     checkBiometrics();
   }, []);
+
+  const checkDeviceRestriction = async (user: User): Promise<{ allowed: boolean; reason?: string }> => {
+    if (user.role === 'admin' || user.isPrimary) {
+      return { allowed: true };
+    }
+
+    try {
+      let currentDeviceId = '';
+      try {
+        const devIdObj = await Device.getId();
+        currentDeviceId = devIdObj?.identifier || '';
+      } catch (e) {
+        console.warn('Could not read device ID:', e);
+      }
+
+      let userDevicesList: any[] = [];
+      try {
+        const qDev = query(collection(db, 'user_devices'), where('linkedUserName', '==', user.username));
+        const devSnap = await getDocs(qDev);
+        userDevicesList = devSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (cloudErr) {
+        try {
+          const localRes = await localDb.query(
+            `SELECT * FROM user_devices WHERE LOWER(linkedUserName) = ?`,
+            [user.username.toLowerCase()]
+          );
+          userDevicesList = Array.isArray(localRes) ? localRes : [];
+        } catch (localErr) {}
+      }
+
+      // Check if any device for this user is blocked / frozen
+      const blockedDev = userDevicesList.find(
+        (d) => d.status === 'محظور' || d.status === 'معطل' || d.isFrozen === 1 || d.isFrozen === true
+      );
+      if (blockedDev) {
+        return {
+          allowed: false,
+          reason: 'هذا الجهاز أو الحساب مرتبط بجهاز محظور أو مجمد حالياً. يرجى مراجعة المسؤول.',
+        };
+      }
+
+      // Check device restriction
+      if (user.device_access_type === 'مخصص') {
+        if (!userDevicesList || userDevicesList.length === 0) {
+          return {
+            allowed: false,
+            reason: 'حسابك محدد بدخول مخصص، ولم يتم إضافة أي جهاز نظام مرتبط باسم حسابك بعد. يرجى من المسؤول إضافته من صفحة [أجهزة النظام].',
+          };
+        }
+
+        if (currentDeviceId) {
+          const matched = userDevicesList.some((d) => {
+            const serialClean = (d.serialImei || '').trim().toLowerCase();
+            const devIdClean = (d.id || '').trim().toLowerCase();
+            const currentClean = currentDeviceId.trim().toLowerCase();
+
+            return (
+              serialClean === currentClean ||
+              devIdClean === currentClean ||
+              currentClean.includes(serialClean) ||
+              serialClean.includes(currentClean)
+            );
+          });
+
+          if (!matched) {
+            return {
+              allowed: false,
+              reason: `عذراً، حسابك مخصص للاستخدام من جهاز محدد فقط. هذا الجهاز غير مصرح له (معرف الجهاز الحالي: ${currentDeviceId}).`,
+            };
+          }
+        }
+      }
+
+      // Update lastLogin and networkStatus on linked user devices
+      if (userDevicesList.length > 0) {
+        const nowIso = new Date().toISOString();
+        for (const targetDev of userDevicesList) {
+          try {
+            await updateDoc(doc(db, 'user_devices', targetDev.id), {
+              lastLogin: nowIso,
+              networkStatus: 'متصل'
+            });
+          } catch (uErr) {}
+        }
+      }
+
+      return { allowed: true };
+    } catch (err) {
+      console.warn('Device check failed:', err);
+      return { allowed: true };
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +171,14 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
       }
 
       if (authenticatedUser) {
+        // Verify Device Restriction
+        const devCheck = await checkDeviceRestriction(authenticatedUser);
+        if (!devCheck.allowed) {
+          setError(devCheck.reason || "لا يمكنك تسجيل الدخول من هذا الجهاز.");
+          setLoading(false);
+          return;
+        }
+
         // Store credentials for biometric quick access
         try {
           const info = await Device.getInfo();
@@ -165,6 +266,12 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
             }
 
             if (authenticatedUser) {
+              const devCheck = await checkDeviceRestriction(authenticatedUser);
+              if (!devCheck.allowed) {
+                setError(devCheck.reason || "لا يمكنك تسجيل الدخول من هذا الجهاز.");
+                setLoading(false);
+                return;
+              }
               onLogin(authenticatedUser);
             } else {
               setError(t('login.invalid'));
@@ -213,6 +320,12 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
         }
 
         if (authenticatedUser) {
+          const devCheck = await checkDeviceRestriction(authenticatedUser);
+          if (!devCheck.allowed) {
+            setError(devCheck.reason || "لا يمكنك تسجيل الدخول من هذا الجهاز.");
+            setLoading(false);
+            return;
+          }
           onLogin(authenticatedUser);
         } else {
           setError(t('login.invalid'));

@@ -30,7 +30,7 @@ import {
   X,
   RefreshCw
 } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, setDoc, onSnapshot, writeBatch, deleteDoc, serverTimestamp } from './firebase';
+import { collection, query, where, getDocs, addDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, writeBatch, deleteDoc, serverTimestamp } from './firebase';
 import { db } from './firebase';
 import { User, ShopConfig } from './types';
 import { openWhatsApp, sendUniversalReminder } from './lib/shareHelper';
@@ -445,7 +445,24 @@ export default function App() {
     setShowSignOutModal(true);
   };
 
-  const confirmSignOut = () => {
+  const confirmSignOut = async () => {
+    if (user?.username) {
+      try {
+        const qDev = query(collection(db, 'user_devices'), where('linkedUserName', '==', user.username));
+        const devSnap = await getDocs(qDev);
+        const nowIso = new Date().toISOString();
+        for (const devDoc of devSnap.docs) {
+          try {
+            await updateDoc(doc(db, 'user_devices', devDoc.id), {
+              lastLogout: nowIso,
+              networkStatus: 'غير متصل'
+            });
+          } catch (err) {}
+        }
+      } catch (e) {
+        console.warn('Logout status update failed:', e);
+      }
+    }
     setUser(null);
     sessionStorage.removeItem('snd_user');
     sessionStorage.removeItem('alertsClosed');
