@@ -407,6 +407,10 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
           phone: editingUser.phone || '',
           email: editingUser.email || '',
           role: editingUser.role,
+          account_status: editingUser.account_status || 'نشط',
+          device_access_type: editingUser.device_access_type || 'عام',
+          linked_device_id: editingUser.linked_device_id || '',
+          notes: editingUser.notes || '',
           permissions: editingUser.permissions || DEFAULT_PERMISSIONS,
           updatedAt: serverTimestamp()
         });

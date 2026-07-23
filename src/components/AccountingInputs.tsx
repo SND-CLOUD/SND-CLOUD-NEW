@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Device } from '@capacitor/device';
 import { ProviderFactory } from '../data/ProviderFactory';
 import { localDb } from '../lib/local-db';
 import { UserDevice } from '../types';
@@ -266,13 +267,19 @@ export default function AccountingInputs() {
     return nums.length > 0 ? Math.max(...nums) + 1 : 1001;
   };
 
-  const prepareNewDeviceForm = () => {
+  const prepareNewDeviceForm = async () => {
     const nextNum = getNextDeviceNumber(userDevices);
+    let autoDeviceId = '';
+    try {
+      const devIdObj = await Device.getId();
+      autoDeviceId = devIdObj?.identifier || '';
+    } catch (e) {}
+
     setDeviceForm({
       deviceNumber: nextNum,
-      serialImei: '869402051234567',
+      serialImei: autoDeviceId || '869402051234567',
       deviceName: "جهاز الورشة الرئيسية - POS-01",
-    deviceType: "عام",
+      deviceType: "عام",
       linkedUserName: 'مدير النظام',
       status: 'نشط',
       networkStatus: 'متصل',
@@ -1809,12 +1816,28 @@ export default function AccountingInputs() {
 
                     {/* 2. الرقم التسلسلي أو IMEI */}
                     <div className="space-y-1">
-                      <label className="text-xs text-gray-300 font-bold block flex items-center justify-between">
-                        <span>2- الرقم التسلسلي أو IMEI <span className="text-red-500">*</span></span>
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-gray-300 font-bold block">
+                          2- الرقم التسلسلي أو IMEI <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const devIdObj = await Device.getId();
+                              if (devIdObj?.identifier) {
+                                setDeviceForm({ ...deviceForm, serialImei: devIdObj.identifier });
+                              }
+                            } catch (e) {}
+                          }}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/20 flex items-center gap-1 transition-all"
+                        >
+                          <span>⚡ جلب معرف هذا الجهاز</span>
+                        </button>
+                      </div>
                       <input 
                         type="text"
-                        placeholder="أدخل الرقم التسلسلي للجهاز..."
+                        placeholder="أدخل الرقم التسلسلي للجهاز أو IMEI..."
                         value={deviceForm.serialImei}
                         onChange={(e) => {
                           setDeviceForm({ ...deviceForm, serialImei: e.target.value });
@@ -1822,7 +1845,9 @@ export default function AccountingInputs() {
                         }}
                         className={`w-full bg-[#242424] border rounded-xl px-3 py-2 text-xs font-mono text-white outline-none focus:border-amber-500 ${!deviceForm.serialImei.trim() && formValidationError ? 'border-red-500 bg-red-500/5' : 'border-white/10'}`}
                       />
-                      <p className="text-[10px] text-gray-500">بيانات افتراضية قابلة للتعديل والتغيير.</p>
+                      <p className="text-[10px] text-gray-500">
+                        معرف الجهاز الخاص بالنظام، السيريال، أو رقم IMEI (سيتم ربط الجهاز تلقائياً مع أو دخول للمستخدم المخصص).
+                      </p>
                     </div>
 
                     {/* 3. اسم الجهاز في النظام */}

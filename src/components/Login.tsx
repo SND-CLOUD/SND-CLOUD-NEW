@@ -42,7 +42,7 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
   }, []);
 
   const checkDeviceRestriction = async (user: User): Promise<{ allowed: boolean; reason?: string }> => {
-    if (user.role === 'admin' || user.isPrimary) {
+    if (user.role === 'admin' || user.isPrimary || user.username === 'admin') {
       return { allowed: true };
     }
 
@@ -50,66 +50,124 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
       let currentDeviceId = '';
       try {
         const devIdObj = await Device.getId();
-        currentDeviceId = devIdObj?.identifier || '';
+        currentDeviceId = (devIdObj?.identifier || '').trim();
       } catch (e) {
         console.warn('Could not read device ID:', e);
       }
 
-      let userDevicesList: any[] = [];
+      const accessType = user.device_access_type || 'عام';
+
+      // Fetch all devices from cloud and local DB
+      let allDevices: any[] = [];
       try {
-        const qDev = query(collection(db, 'user_devices'), where('linkedUserName', '==', user.username));
-        const devSnap = await getDocs(qDev);
-        userDevicesList = devSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const devSnap = await getDocs(collection(db, 'user_devices'));
+        allDevices = devSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       } catch (cloudErr) {
         try {
-          const localRes = await localDb.query(
-            `SELECT * FROM user_devices WHERE LOWER(linkedUserName) = ?`,
-            [user.username.toLowerCase()]
-          );
-          userDevicesList = Array.isArray(localRes) ? localRes : [];
+          const localRes = await localDb.query(`SELECT * FROM user_devices`);
+          allDevices = Array.isArray(localRes) ? localRes : [];
         } catch (localErr) {}
       }
 
-      // Check if any device for this user is blocked / frozen
+      const uUsername = (user.username || '').toLowerCase().trim();
+      const uName = (user.name || '').toLowerCase().trim();
+      const uId = (user.id || '').toLowerCase().trim();
+
+      // Find user devices matching username, full display name, or user ID
+      const userDevicesList = allDevices.filter((d) => {
+        const dLinkedName = (d.linkedUserName || '').toLowerCase().trim();
+        const dLinkedId = (d.linkedUserId || '').toLowerCase().trim();
+        return (
+          (uUsername && dLinkedName === uUsername) ||
+          (uName && dLinkedName === uName) ||
+          (uId && dLinkedId === uId) ||
+          (uUsername && dLinkedId === uUsername) ||
+          (user.linked_device_id && (d.id === user.linked_device_id || d.serialImei === user.linked_device_id))
+        );
+      });
+
+      // Check if any device assigned to this user is blocked or frozen
       const blockedDev = userDevicesList.find(
         (d) => d.status === 'محظور' || d.status === 'معطل' || d.isFrozen === 1 || d.isFrozen === true
       );
       if (blockedDev) {
         return {
           allowed: false,
-          reason: 'هذا الجهاز أو الحساب مرتبط بجهاز محظور أو مجمد حالياً. يرجى مراجعة المسؤول.',
+          reason: `هذا الحساب مرتبط بجهاز محظور أو مجمد حالياً في نظام الإدارة (${blockedDev.deviceName || 'جهاز النظام'}). يرجى مراجعة المسؤول.`,
         };
       }
 
-      // Check device restriction
-      if (user.device_access_type === 'مخصص') {
-        if (!userDevicesList || userDevicesList.length === 0) {
+      // Check for general access users
+      if (accessType === 'عام') {
+        if (currentDeviceId) {
+          const blockedById = allDevices.find(
+            (d) =>
+              (d.status === 'محظور' || d.status === 'معطل' || d.isFrozen === 1 || d.isFrozen === true) &&
+              (d.serialImei === currentDeviceId || d.id === currentDeviceId)
+          );
+          if (blockedById) {
+            return {
+              allowed: false,
+              reason: 'هذا الجهاز محظور أو مجمد من استخدام النظام. يرجى مراجعة المسؤول.',
+            };
+          }
+        }
+        return { allowed: true };
+      }
+
+      // Check for restricted / dedicated access users ('مخصص')
+      if (accessType === 'مخصص') {
+        if (userDevicesList.length === 0) {
           return {
             allowed: false,
-            reason: 'حسابك محدد بدخول مخصص، ولم يتم إضافة أي جهاز نظام مرتبط باسم حسابك بعد. يرجى من المسؤول إضافته من صفحة [أجهزة النظام].',
+            reason: `حسابك (${user.name}) مخصص للاستخدام من جهاز محدد فقط، ولكن لم يتم إضافة أي جهاز مرتبط بحسابك في صفحة [أجهزة النظام] بعد. يرجى من المسؤول إضافته.`,
           };
         }
 
-        if (currentDeviceId) {
-          const matched = userDevicesList.some((d) => {
-            const serialClean = (d.serialImei || '').trim().toLowerCase();
-            const devIdClean = (d.id || '').trim().toLowerCase();
-            const currentClean = currentDeviceId.trim().toLowerCase();
+        let matchedDev = userDevicesList.find((d) => {
+          if (!currentDeviceId) return false;
+          const s = (d.serialImei || '').trim().toLowerCase();
+          const devIdClean = (d.id || '').trim().toLowerCase();
+          const cur = currentDeviceId.toLowerCase();
 
-            return (
-              serialClean === currentClean ||
-              devIdClean === currentClean ||
-              currentClean.includes(serialClean) ||
-              serialClean.includes(currentClean)
-            );
+          return (
+            s === cur ||
+            devIdClean === cur ||
+            (s.length >= 6 && cur.includes(s)) ||
+            (cur.length >= 6 && s.includes(cur))
+          );
+        });
+
+        // AUTO-BINDING: If device serial is placeholder or empty, bind currentDeviceId to it automatically on first login!
+        if (!matchedDev && currentDeviceId) {
+          const unboundDev = userDevicesList.find((d) => {
+            const s = (d.serialImei || '').trim();
+            return !s || s === '869402051234567' || s === '0000' || s === 'غير مسجل' || s.length < 5;
           });
 
-          if (!matched) {
-            return {
-              allowed: false,
-              reason: `عذراً، حسابك مخصص للاستخدام من جهاز محدد فقط. هذا الجهاز غير مصرح له (معرف الجهاز الحالي: ${currentDeviceId}).`,
-            };
+          if (unboundDev) {
+            matchedDev = unboundDev;
+            try {
+              await updateDoc(doc(db, 'user_devices', unboundDev.id), {
+                serialImei: currentDeviceId,
+                updatedAt: new Date().toISOString()
+              });
+              await localDb.run(
+                `UPDATE user_devices SET serialImei = ? WHERE id = ?`,
+                [currentDeviceId, unboundDev.id]
+              );
+              console.log(`Auto-bound device ${unboundDev.id} to current hardware ID ${currentDeviceId}`);
+            } catch (bErr) {
+              console.warn('Auto-binding failed:', bErr);
+            }
           }
+        }
+
+        if (!matchedDev) {
+          return {
+            allowed: false,
+            reason: `عذراً، حسابك (${user.name}) مخصص للاستخدام من جهاز محدد آخر فقط. هذا الجهاز غير مصرح له (معرف الجهاز الحالي: ${currentDeviceId || 'غير معروف'}).`,
+          };
         }
       }
 
@@ -122,13 +180,17 @@ export default function Login({ onLogin }: { onLogin: (user: User) => void }) {
               lastLogin: nowIso,
               networkStatus: 'متصل'
             });
+            await localDb.run(
+              `UPDATE user_devices SET lastLogin = ?, networkStatus = 'متصل' WHERE id = ?`,
+              [nowIso, targetDev.id]
+            );
           } catch (uErr) {}
         }
       }
 
       return { allowed: true };
     } catch (err) {
-      console.warn('Device check failed:', err);
+      console.warn('Device check error:', err);
       return { allowed: true };
     }
   };
