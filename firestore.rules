@@ -109,6 +109,9 @@ service cloud.firestore {
     match /approval_actions/{docId} {
       allow read, write: if true;
     }
+    match /job_titles/{id} {
+      allow read, write: if true;
+    }
     match /test/{docId} {
       allow get: if true;
     }

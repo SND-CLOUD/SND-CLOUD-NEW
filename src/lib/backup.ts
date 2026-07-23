@@ -22,7 +22,8 @@ const TABLES_TO_BACKUP = [
   'fin_currencies',
   'fin_payment_methods',
   'user_devices',
-  'document_outputs'
+  'document_outputs',
+  'job_titles'
 ];
 
 export async function generateBackupData(): Promise<string> {

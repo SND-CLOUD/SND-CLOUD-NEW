@@ -550,14 +550,7 @@ export default function UserManagement({ currentUser }: { currentUser: User }) {
                   <span>{u.linked_device_id || 'بدون'}</span>
                 </div>
 
-                {/* Network Status */}
-                <div className="flex items-center gap-1" title={u.network_status || 'غير متصل'}>
-                  {u.network_status === 'متصل' ? (
-                    <Wifi size={14} className="text-emerald-500" />
-                  ) : (
-                    <WifiOff size={14} className="text-gray-500" />
-                  )}
-                </div>
+
 
                 {/* Account Status */}
                 <div className="flex items-center gap-1 mr-auto" title={accountStatus}>

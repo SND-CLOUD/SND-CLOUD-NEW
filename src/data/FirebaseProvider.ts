@@ -62,7 +62,10 @@ export class FirebaseProvider implements IDataProvider {
     const q = this.buildFirestoreQuery(collectionName, constraints);
     const snap = await fsGetDocs(q);
     const docs = snap.docs.map(fsDoc => {
-      const docData = this.formatFirestoreData(fsDoc.data());
+      const docData = this.formatFirestoreData(fsDoc.data()) || {};
+      if (typeof docData === 'object' && !docData.id) {
+        docData.id = fsDoc.id;
+      }
       return {
         id: fsDoc.id,
         ref: { name: collectionName, id: fsDoc.id, path: `${collectionName}/${fsDoc.id}` },
@@ -101,7 +104,7 @@ export class FirebaseProvider implements IDataProvider {
       }
     });
 
-    await fsUpdateDoc(docRef, cleaned);
+    await fsSetDoc(docRef, cleaned, { merge: true });
   }
 
   async deleteDoc(collectionName: string, id: string): Promise<void> {
@@ -243,7 +246,7 @@ export class FirebaseProvider implements IDataProvider {
       },
       update: (docRef: any, data: any) => {
         const ref = doc(this.getDb(), docRef.name, docRef.id);
-        batch.update(ref, this.prepareDataForFirestore(data));
+        batch.set(ref, this.prepareDataForFirestore(data), { merge: true });
       },
       delete: (docRef: any) => {
         const ref = doc(this.getDb(), docRef.name, docRef.id);

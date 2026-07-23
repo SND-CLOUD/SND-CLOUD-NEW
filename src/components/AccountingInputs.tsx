@@ -145,6 +145,7 @@ export default function AccountingInputs() {
     deviceNumber: number;
     serialImei: string;
     deviceName: string;
+    deviceType: "مخصص" | "عام";
     linkedUserName: string;
     status: 'نشط' | 'معطل' | 'محظور';
     networkStatus: 'متصل' | 'غير متصل';
@@ -153,7 +154,8 @@ export default function AccountingInputs() {
   }>({
     deviceNumber: 1001,
     serialImei: '869402051234567',
-    deviceName: 'جهاز الورشة الرئيسية - POS-01',
+    deviceName: "جهاز الورشة الرئيسية - POS-01",
+    deviceType: "عام",
     linkedUserName: 'مدير النظام',
     status: 'نشط',
     networkStatus: 'متصل',
@@ -180,18 +182,18 @@ export default function AccountingInputs() {
     try {
       const provider = ProviderFactory.getProvider();
       const typesRes = await provider.getDocs('fin_transaction_types');
-      setTxTypes(typesRes.docs.map(d => d.data()) as FinTransactionType[]);
+      setTxTypes(typesRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as FinTransactionType[]);
       const fundsRes = await provider.getDocs('fin_funds');
-      setFunds(fundsRes.docs.map(d => d.data()) as FinFund[]);
+      setFunds(fundsRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as FinFund[]);
       const currRes = await provider.getDocs('fin_currencies');
-      setCurrencies(currRes.docs.map(d => d.data()) as FinCurrency[]);
+      setCurrencies(currRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as FinCurrency[]);
       const methRes = await provider.getDocs('fin_payment_methods');
-      setMethods(methRes.docs.map(d => d.data()) as FinPaymentMethod[]);
+      setMethods(methRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as FinPaymentMethod[]);
 
       // Load Job Titles
       try {
         const jobsRes = await provider.getDocs('job_titles');
-        let fetchedJobs = jobsRes.docs.map(d => d.data()) as any[];
+        let fetchedJobs = jobsRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
         if (!fetchedJobs || fetchedJobs.length === 0) {
           const localJobs = await localDb.query('SELECT * FROM job_titles');
           if (localJobs && localJobs.values) fetchedJobs = localJobs.values;
@@ -207,25 +209,25 @@ export default function AccountingInputs() {
       // Load Users for dropdown
       try {
         const usersRes = await provider.getDocs('users');
-        let fetchedUsers = usersRes.docs.map(d => d.data()) as any[];
+        let fetchedUsers = usersRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
         if (!fetchedUsers || fetchedUsers.length === 0) {
           const localRes = await localDb.query('SELECT * FROM users');
           if (localRes && localRes.values) {
             fetchedUsers = localRes.values;
           }
         }
-        setSystemUsers(fetchedUsers.map(u => ({ id: u.id, name: u.name || u.username })));
+        setSystemUsers(fetchedUsers.map((u, idx) => ({ id: u.id || `user-${idx}`, name: u.name || u.username || `مستخدم ${idx + 1}` })));
       } catch (err) {
         try {
           const localRes = await localDb.query('SELECT * FROM users');
-          setSystemUsers((localRes?.values || []).map((u: any) => ({ id: u.id, name: u.name || u.username })));
+          setSystemUsers((localRes?.values || []).map((u: any, idx: number) => ({ id: u.id || `user-${idx}`, name: u.name || u.username || `مستخدم ${idx + 1}` })));
         } catch (lErr) {}
       }
 
       // Load User Devices
       try {
         const devRes = await provider.getDocs('user_devices');
-        let fetchedDevs = devRes.docs.map(d => d.data()) as UserDevice[];
+        let fetchedDevs = devRes.docs.map((d: any) => ({ id: d.id, ...d.data() })) as UserDevice[];
         if (!fetchedDevs || fetchedDevs.length === 0) {
           const localRes = await localDb.query('SELECT * FROM user_devices ORDER BY deviceNumber ASC');
           if (localRes && localRes.values) {
@@ -269,7 +271,8 @@ export default function AccountingInputs() {
     setDeviceForm({
       deviceNumber: nextNum,
       serialImei: '869402051234567',
-      deviceName: 'جهاز الورشة الرئيسية - POS-01',
+      deviceName: "جهاز الورشة الرئيسية - POS-01",
+    deviceType: "عام",
       linkedUserName: 'مدير النظام',
       status: 'نشط',
       networkStatus: 'متصل',
@@ -310,6 +313,7 @@ export default function AccountingInputs() {
         deviceNumber: Number(deviceForm.deviceNumber) || getNextDeviceNumber(userDevices),
         serialImei: deviceForm.serialImei.trim(),
         deviceName: deviceForm.deviceName.trim(),
+        deviceType: deviceForm.deviceType,
         linkedUserName: deviceForm.linkedUserName.trim(),
         linkedUserId: `usr-${Math.random().toString(36).substring(2, 6)}`,
         status: deviceForm.status,
@@ -332,15 +336,16 @@ export default function AccountingInputs() {
       try {
         await localDb.run(
           `INSERT OR REPLACE INTO user_devices (
-            id, deviceNumber, serialImei, deviceName, linkedUserName, linkedUserId,
+            id, deviceNumber, serialImei, deviceName, deviceType, linkedUserName, linkedUserId,
             status, networkStatus, createdAt, lastLogin, lastLogout, blockDate,
             createdByUserId, createdByUserName, notes, isFrozen, updatedAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             newDevRecord.id,
             newDevRecord.deviceNumber,
             newDevRecord.serialImei,
             newDevRecord.deviceName,
+            newDevRecord.deviceType || "عام",
             newDevRecord.linkedUserName,
             newDevRecord.linkedUserId,
             newDevRecord.status,
@@ -393,15 +398,16 @@ export default function AccountingInputs() {
       try {
         await localDb.run(
           `INSERT OR REPLACE INTO user_devices (
-            id, deviceNumber, serialImei, deviceName, linkedUserName, linkedUserId,
+            id, deviceNumber, serialImei, deviceName, deviceType, linkedUserName, linkedUserId,
             status, networkStatus, createdAt, lastLogin, lastLogout, blockDate,
             createdByUserId, createdByUserName, notes, isFrozen, updatedAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             updatedDev.id,
             updatedDev.deviceNumber,
             updatedDev.serialImei,
             updatedDev.deviceName,
+            updatedDev.deviceType || "عام",
             updatedDev.linkedUserName,
             updatedDev.linkedUserId || '',
             updatedDev.status || 'نشط',
@@ -452,6 +458,37 @@ export default function AccountingInputs() {
   };
 
   // Permanent Block handler
+  // Delete Device handler
+
+  const handleDeleteDevice = async (deviceId: string) => {
+
+    if (!confirm("هل أنت متأكد من حذف هذا الجهاز؟")) return;
+
+    try {
+
+      await ProviderFactory.getProvider().deleteDoc("user_devices", deviceId);
+
+      try {
+
+        await localDb.run("DELETE FROM user_devices WHERE id = ?", [deviceId]);
+
+      } catch (sq) {}
+
+      triggerNotification("تم حذف الجهاز بنجاح");
+
+      setSelectedDeviceForDetail(null);
+
+      loadAllData();
+
+    } catch (e: any) {
+
+      alert("فشلت العملية: " + e.message);
+
+    }
+
+  };
+
+
   const handleBlockDevice = async (device: UserDevice) => {
     if (!confirm('هل أنت متأكد من حظر هذا الجهاز بصفة نهائية؟ سيتم تسجيل خروج هويته من النظام.')) return;
     const nowIso = new Date().toISOString();
@@ -597,7 +634,6 @@ export default function AccountingInputs() {
       setTimeout(() => setDeleteConfirmId(null), 3000);
     }
   };
-
   // 3. Currency Submit
   const handleCurrencySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -605,23 +641,23 @@ export default function AccountingInputs() {
 
     try {
       if (currencyForm.id) {
-        await ProviderFactory.getProvider().updateDoc('fin_currencies', currencyForm.id, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
-        triggerNotification('تم تحديث العملة بنجاح');
+        await ProviderFactory.getProvider().updateDoc("fin_currencies", currencyForm.id, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
+        triggerNotification("تم تحديث العملة بنجاح");
       } else {
         const newId = currencyForm.symbol.trim().toUpperCase();
-        await ProviderFactory.getProvider().setDoc('fin_currencies', newId, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
-        triggerNotification('تم إضافة العملة بنجاح');
+        await ProviderFactory.getProvider().setDoc("fin_currencies", newId, { name: currencyForm.name.trim(), symbol: currencyForm.symbol.trim(), decimals: Number(currencyForm.decimals), status: currencyForm.status });
+        triggerNotification("تم إضافة العملة بنجاح");
       }
       setCurrencyForm({
-        name: '',
-        symbol: '',
+        name: "",
+        symbol: "",
         decimals: 2,
-        status: 'active'
+        status: "active"
       });
       setShowCurrencyForm(false);
       loadAllData();
     } catch (err: any) {
-      setError(err.message || 'فشل تشغيل العملة');
+      setError(err.message || "فشل تشغيل العملة");
     }
   };
 
@@ -632,22 +668,22 @@ export default function AccountingInputs() {
 
     try {
       if (methodForm.id) {
-        await ProviderFactory.getProvider().updateDoc('fin_payment_methods', methodForm.id, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
-        triggerNotification('تم تحديث طريقة الدفع بنجاح');
+        await ProviderFactory.getProvider().updateDoc("fin_payment_methods", methodForm.id, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
+        triggerNotification("تم تحديث طريقة الدفع بنجاح");
       } else {
         const newId = `pay-${Math.random().toString(36).substring(2, 8)}`;
-        await ProviderFactory.getProvider().setDoc('fin_payment_methods', newId, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
-        triggerNotification('تم إضافة طريقة الدفع الجديدة بنجاح');
+        await ProviderFactory.getProvider().setDoc("fin_payment_methods", newId, { name: methodForm.name.trim(), description: methodForm.description.trim(), status: methodForm.status });
+        triggerNotification("تم إضافة طريقة الدفع الجديدة بنجاح");
       }
       setMethodForm({
-        name: '',
-        description: '',
-        status: 'active'
+        name: "",
+        description: "",
+        status: "active"
       });
       setShowMethodForm(false);
       loadAllData();
     } catch (err: any) {
-      setError(err.message || 'فشل حفظ طريقة الدفع');
+      setError(err.message || "فشل حفظ طريقة الدفع");
     }
   };
 
@@ -657,32 +693,32 @@ export default function AccountingInputs() {
     if (!jobTitleForm.title.trim()) return;
 
     try {
-      if (editingJobTitleId && editingJobTitleId !== 'new') {
-        await ProviderFactory.getProvider().updateDoc('job_titles', editingJobTitleId, { 
-          job_number: jobTitleForm.job_number, 
-          title: jobTitleForm.title.trim(), 
-          notes: jobTitleForm.notes.trim() 
+      const autoJobNum = jobTitles.length > 0 ? Math.max(...jobTitles.map(j => Number(j.job_number) || 0)) + 1 : 1;
+      const finalJobNum = jobTitleForm.job_number ? Number(jobTitleForm.job_number) : autoJobNum;
+
+      if (editingJobTitleId && editingJobTitleId !== "new") {
+        await ProviderFactory.getProvider().updateDoc("job_titles", editingJobTitleId, {
+          id: editingJobTitleId,
+          job_number: finalJobNum,
+          title: jobTitleForm.title.trim(),
+          notes: jobTitleForm.notes.trim()
         });
-        // Update SQLite
-        await localDb.query(`UPDATE job_titles SET job_number = ?, title = ?, notes = ? WHERE id = ?`, [jobTitleForm.job_number, jobTitleForm.title.trim(), jobTitleForm.notes.trim(), editingJobTitleId]);
-        triggerNotification('تم تحديث المسمى الوظيفي بنجاح');
+        triggerNotification("تم تحديث المسمى الوظيفي بنجاح");
       } else {
         const newId = `job-${Math.random().toString(36).substring(2, 8)}`;
-        const jobNum = jobTitles.length > 0 ? Math.max(...jobTitles.map(j => Number(j.job_number) || 0)) + 1 : 1;
-        await ProviderFactory.getProvider().setDoc('job_titles', newId, { 
-          job_number: jobNum, 
-          title: jobTitleForm.title.trim(), 
-          notes: jobTitleForm.notes.trim() 
+        await ProviderFactory.getProvider().setDoc("job_titles", newId, {
+          id: newId,
+          job_number: finalJobNum,
+          title: jobTitleForm.title.trim(),
+          notes: jobTitleForm.notes.trim()
         });
-        // Insert into SQLite
-        await localDb.query(`INSERT INTO job_titles (id, job_number, title, notes) VALUES (?, ?, ?, ?)`, [newId, jobNum, jobTitleForm.title.trim(), jobTitleForm.notes.trim()]);
-        triggerNotification('تم إضافة المسمى الوظيفي بنجاح');
+        triggerNotification("تم إضافة المسمى الوظيفي بنجاح");
       }
-      setJobTitleForm({ id: '', job_number: '', title: '', notes: '' });
+      setJobTitleForm({ id: "", job_number: "", title: "", notes: "" });
       setEditingJobTitleId(null);
       loadAllData();
     } catch (err: any) {
-      setError(err.message || 'فشل حفظ المسمى الوظيفي');
+      setError(err.message || "فشل حفظ المسمى الوظيفي");
     }
   };
 
@@ -690,13 +726,12 @@ export default function AccountingInputs() {
   const handleDeleteJobTitle = async (id: string) => {
     if (deleteJobTitleConfirmId === id) {
       try {
-        await ProviderFactory.getProvider().deleteDoc('job_titles', id);
-        await localDb.query(`DELETE FROM job_titles WHERE id = ?`, [id]);
-        triggerNotification('تم الحذف بنجاح');
+        await ProviderFactory.getProvider().deleteDoc("job_titles", id);
+        triggerNotification("تم الحذف بنجاح");
         setDeleteJobTitleConfirmId(null);
         loadAllData();
       } catch (err: any) {
-        setError(err.message || 'فشل الحذف');
+        setError(err.message || "فشل الحذف");
       }
     } else {
       setDeleteJobTitleConfirmId(id);
@@ -891,10 +926,11 @@ export default function AccountingInputs() {
                 {!editingJobTitleId && !jobTitleForm.title && (
                   <button 
                     onClick={() => {
-                      setJobTitleForm({ id: '', job_number: '', title: '', notes: '' });
+                      const nextNum = jobTitles.length > 0 ? Math.max(...jobTitles.map(j => Number(j.job_number) || 0)) + 1 : 1;
+                      setJobTitleForm({ id: '', job_number: String(nextNum), title: '', notes: '' });
                       setEditingJobTitleId('new');
                     }}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black text-xs font-black rounded-xl transition-all font-cairo cursor-pointer"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black text-xs font-black rounded-xl transition-all font-cairo"
                   >
                     <Plus size={16} />
                     إضافة مسمى وظيفي
@@ -903,95 +939,88 @@ export default function AccountingInputs() {
               </div>
 
               {(editingJobTitleId || jobTitleForm.title) && (
-                <form onSubmit={handleJobTitleSubmit} className="bg-[#1c1c1c] p-4 rounded-xl border border-white/10 space-y-4 animate-in fade-in slide-in-from-top-2">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[11px] text-gray-400 font-bold block mb-1">اسم الوظيفة <span className="text-red-500">*</span></label>
+                <form onSubmit={handleJobTitleSubmit} className="bg-[#1c1c1c] border border-white/10 rounded-2xl p-4 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-400 font-bold block font-cairo mr-1">اسم الوظيفة <span className="text-red-500">*</span></label>
                       <input 
                         type="text"
-                        required
-                        placeholder="مثال: مدير مبيعات"
+                        placeholder="مثال: مدير عام، محاسب..."
                         value={jobTitleForm.title}
                         onChange={e => setJobTitleForm({...jobTitleForm, title: e.target.value})}
-                        className="w-full bg-[#242424] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500 transition-colors"
+                        className="w-full bg-[#242424] border border-white/10 rounded-xl px-3 py-2 text-xs font-cairo text-white outline-none focus:border-amber-500"
+                        required
                       />
                     </div>
-                    <div>
-                      <label className="text-[11px] text-gray-400 font-bold block mb-1">تفاصيل</label>
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-400 font-bold block font-cairo mr-1">التفاصيل والملاحظات</label>
                       <input 
                         type="text"
                         placeholder="تفاصيل إضافية..."
                         value={jobTitleForm.notes}
                         onChange={e => setJobTitleForm({...jobTitleForm, notes: e.target.value})}
-                        className="w-full bg-[#242424] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500 transition-colors"
+                        className="w-full bg-[#242424] border border-white/10 rounded-xl px-3 py-2 text-xs font-cairo text-white outline-none focus:border-amber-500"
                       />
                     </div>
                   </div>
-                  <div className="flex gap-2 justify-end pt-2">
-                    <button type="button" onClick={() => { setJobTitleForm({id:'', job_number:'', title:'', notes:''}); setEditingJobTitleId(null); }} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all cursor-pointer">
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button 
+                      type="button" 
+                      onClick={() => { setJobTitleForm({id:'', job_number:'', title:'', notes:''}); setEditingJobTitleId(null); }} 
+                      className="px-4 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold font-cairo"
+                    >
                       إلغاء
                     </button>
-                    <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black text-xs font-black rounded-xl transition-all flex items-center gap-1 cursor-pointer">
-                      <Check size={16} />
-                      {editingJobTitleId && editingJobTitleId !== 'new' ? 'تحديث' : 'حفظ الوظيفة'}
+                    <button 
+                      type="submit" 
+                      className="px-5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold font-cairo"
+                    >
+                      {editingJobTitleId && editingJobTitleId !== 'new' ? 'تحديث' : 'حفظ'}
                     </button>
                   </div>
                 </form>
               )}
 
-              <div className="bg-[#1a1a1a] rounded-xl border border-white/5 overflow-hidden">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-[#222222] text-gray-400 font-bold uppercase text-[11px]">
-                    <tr>
-                      <th className="p-3 w-16">الرقم</th>
-                      <th className="p-3">اسم الوظيفة</th>
-                      <th className="p-3">ملاحظات</th>
-                      <th className="p-3 w-24 text-center">إجراءات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {jobTitles.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-6 text-center text-gray-500 font-mono text-[11px]">
-                          لا توجد مسميات وظيفية مضافة بعد.
-                        </td>
-                      </tr>
-                    ) : (
-                      jobTitles.map((job) => (
-                        <tr key={job.id} className="hover:bg-white/[0.02] transition-colors group">
-                          <td className="p-3 text-gray-500 font-mono">{job.job_number}</td>
-                          <td className="p-3 font-bold text-white">{job.title}</td>
-                          <td className="p-3 text-gray-400">{job.notes || '-'}</td>
-                          <td className="p-3 text-center">
-                            <div className="flex justify-center gap-2">
-                              <button
-                                onClick={() => {
-                                  setJobTitleForm(job);
-                                  setEditingJobTitleId(job.id);
-                                }}
-                                className="p-1.5 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-black rounded-lg transition-all cursor-pointer"
-                                title="تعديل"
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteJobTitle(job.id)}
-                                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                  deleteJobTitleConfirmId === job.id 
-                                    ? 'bg-red-500 text-white' 
-                                    : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                                }`}
-                                title={deleteJobTitleConfirmId === job.id ? "تأكيد الحذف" : "حذف"}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              {/* Job Titles list */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {jobTitles.length === 0 ? (
+                  <div className="col-span-1 sm:col-span-2 p-6 text-center text-gray-500 font-mono text-[11px] bg-[#181818] rounded-2xl border border-white/5">
+                    لا توجد مسميات وظيفية مضافة بعد.
+                  </div>
+                ) : (
+                  jobTitles.map((job, idx) => (
+                    <div key={job.id || `job-${idx}`} className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex justify-between items-center group relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-1 h-full bg-amber-500/50"></div>
+                      <div className="pr-2">
+                        <h4 className="text-xs font-black text-white font-cairo">{job.title}</h4>
+                        <p className="text-[10px] text-gray-400 font-cairo mt-1">{job.notes || 'لا يوجد تفاصيل'}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => {
+                            setJobTitleForm(job);
+                            setEditingJobTitleId(job.id);
+                          }}
+                          className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all border border-white/5 cursor-pointer"
+                          title="تعديل"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteJobTitle(job.id)}
+                          className={`p-2 rounded-xl transition-all border border-white/5 cursor-pointer ${
+                            deleteJobTitleConfirmId === job.id 
+                              ? 'bg-red-500/20 text-red-400 border-red-500/30' 
+                              : 'bg-white/5 hover:bg-red-500/10 text-gray-400 hover:text-red-400'
+                          }`}
+                          title={deleteJobTitleConfirmId === job.id ? "تأكيد الحذف" : "حذف"}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -1072,7 +1101,7 @@ export default function AccountingInputs() {
                   </div>
                   <div className="p-3 divide-y divide-white/5 max-h-[300px] overflow-y-auto">
                     {txTypes.filter(t => t.type === 'receipt').map((item, idx) => (
-                      <div key={item.id} className="py-2.5 flex items-center justify-between gap-2">
+                      <div key={item.id || `rcpt-${idx}`} className="py-2.5 flex items-center justify-between gap-2">
                         <span className="text-xs text-gray-200 font-cairo font-medium">{item.name}</span>
                         <div className="flex items-center gap-1">
                           <button 
@@ -1117,7 +1146,7 @@ export default function AccountingInputs() {
                   </div>
                   <div className="p-3 divide-y divide-white/5 max-h-[300px] overflow-y-auto">
                     {txTypes.filter(t => t.type === 'payment').map((item, idx) => (
-                      <div key={item.id} className="py-2.5 flex items-center justify-between gap-2">
+                      <div key={item.id || `pymt-${idx}`} className="py-2.5 flex items-center justify-between gap-2">
                         <span className="text-xs text-gray-200 font-cairo font-medium">{item.name}</span>
                         <div className="flex items-center gap-1">
                           <button 
@@ -1224,8 +1253,8 @@ export default function AccountingInputs() {
                         onChange={(e) => setFundForm({ ...fundForm, currency: e.target.value })}
                         className="w-full bg-[#242424] border border-white/10 rounded-xl px-3 py-2 text-xs font-cairo text-white outline-none focus:border-amber-500"
                       >
-                        {currencies.map(c => (
-                          <option key={c.id} value={c.name}>{c.name}</option>
+                        {currencies.map((c, idx) => (
+                          <option key={c.id || `curr-opt-${idx}`} value={c.name}>{c.name}</option>
                         ))}
                       </select>
                     </div>
@@ -1334,7 +1363,7 @@ export default function AccountingInputs() {
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {funds.map((f, index) => (
-                      <tr key={f.id} className="hover:bg-white/5 transition-colors text-xs text-gray-200">
+                      <tr key={f.id || `fund-${index}`} className="hover:bg-white/5 transition-colors text-xs text-gray-200">
                         <td className="py-3 px-4 text-center font-mono text-[11px] text-gray-400">{index + 1}</td>
                         <td className="py-3 px-4 font-bold font-cairo">{f.name}</td>
                         <td className="py-3 px-4 font-cairo">
@@ -1535,8 +1564,8 @@ export default function AccountingInputs() {
 
               {/* Currencies List */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {currencies.map(c => (
-                  <div key={c.id} className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+                {currencies.map((c, idx) => (
+                  <div key={c.id || `curr-card-${idx}`} className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-black text-white font-cairo">{c.name}</span>
@@ -1669,8 +1698,8 @@ export default function AccountingInputs() {
 
               {/* Methods list */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {methods.map(m => (
-                  <div key={m.id} className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
+                {methods.map((m, idx) => (
+                  <div key={m.id || `method-${idx}`} className="bg-[#181818] border border-white/5 rounded-2xl p-4 flex justify-between items-center">
                     <div>
                       <h4 className="text-xs font-black text-white font-cairo">{m.name}</h4>
                       <p className="text-[10px] text-gray-400 font-cairo mt-1">{m.description || 'لا يوجد وصف'}</p>
@@ -1814,6 +1843,37 @@ export default function AccountingInputs() {
                       <p className="text-[10px] text-gray-500">اسم الموائم للجهاز بالورشة.</p>
                     </div>
 
+
+
+                    {/* نوع الجهاز */}
+
+                    <div className="space-y-1">
+
+                      <label className="text-xs text-gray-300 font-bold block">
+
+                        نوع الجهاز
+
+                      </label>
+
+                      <select
+
+                        value={deviceForm.deviceType || "عام"}
+
+                        onChange={(e) => setDeviceForm({ ...deviceForm, deviceType: e.target.value as "مخصص" | "عام" })}
+
+                        className="w-full bg-[#242424] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
+
+                      >
+
+                        <option value="مخصص">مخصص</option>
+
+                        <option value="عام">عام</option>
+
+                      </select>
+
+                      <p className="text-[10px] text-gray-500">هل هو مخصص لمستخدم محدد أم عام.</p>
+                    </div>
+
                     {/* 4. اسم مستخدم النظام المرتبط بالجهاز */}
                     <div className="space-y-1">
                       <label className="text-xs text-gray-300 font-bold block">
@@ -1830,8 +1890,8 @@ export default function AccountingInputs() {
                         className={`w-full bg-[#242424] border rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-500 ${!deviceForm.linkedUserName.trim() && formValidationError ? 'border-red-500 bg-red-500/5' : 'border-white/10'}`}
                       >
                         <option value="">-- اختر مستخدم النظام --</option>
-                        {systemUsers.map((u) => (
-                          <option key={u.id} value={u.name}>{u.name}</option>
+                        {systemUsers.map((u, idx) => (
+                          <option key={u.id || `usr-opt1-${idx}`} value={u.name}>{u.name}</option>
                         ))}
                       </select>
                       <p className="text-[10px] text-gray-500">المستخدم المخول باستخدام الجهاز.</p>
@@ -1840,22 +1900,24 @@ export default function AccountingInputs() {
                     {/* 5. خيار تفعيل / الغاء تفعيل */}
                     <div className="space-y-1">
                       <label className="text-xs text-gray-300 font-bold block">5- حالة تفعيل الجهاز</label>
-                      <div className="flex items-center gap-3 bg-[#242424] border border-white/10 rounded-xl p-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setDeviceForm({ ...deviceForm, status: 'نشط' })}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${deviceForm.status === 'نشط' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                        >
-                          تفعيل (نشط)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeviceForm({ ...deviceForm, status: 'معطل' })}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${deviceForm.status === 'معطل' ? 'bg-amber-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                        >
-                          إلغاء تفعيل (معطل)
-                        </button>
-                      </div>
+                      <select 
+                        value={deviceForm.status === 'معطل' ? 'تعطيل' : deviceForm.isFrozen ? 'تجميد' : 'تفعيل'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'تفعيل') {
+                            setDeviceForm({ ...deviceForm, status: 'نشط', isFrozen: false });
+                          } else if (val === 'تجميد') {
+                            setDeviceForm({ ...deviceForm, status: 'نشط', isFrozen: true });
+                          } else if (val === 'تعطيل') {
+                            setDeviceForm({ ...deviceForm, status: 'معطل', isFrozen: false });
+                          }
+                        }}
+                        className="w-full bg-[#242424] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
+                      >
+                        <option value="تفعيل">تفعيل (نشط)</option>
+                        <option value="تجميد">تجميد مؤقت</option>
+                        <option value="تعطيل">إلغاء تفعيل (معطل)</option>
+                      </select>
                     </div>
 
                     {/* حالة اتصال الشبكة النمطية */}
@@ -1969,6 +2031,7 @@ export default function AccountingInputs() {
                       <tr className="bg-[#222222] text-gray-400 border-b border-white/5 font-bold uppercase text-[11px] whitespace-nowrap">
                         <th className="p-3">رقم الجهاز</th>
                         <th className="p-3">اسم الجهاز</th>
+                        <th className="p-3">نوع الجهاز</th>
                         <th className="p-3">اسم المستخدم المرتبط</th>
                         <th className="p-3">حالة الجهاز</th>
                         <th className="p-3">اتصال الشبكة</th>
@@ -1995,9 +2058,9 @@ export default function AccountingInputs() {
                           const numB = Number(b.deviceNumber) || 0;
                           return devSortOrder === 'asc' ? numA - numB : numB - numA;
                         })
-                        .map((device) => (
+                        .map((device, idx) => (
                           <tr 
-                            key={device.id} 
+                            key={device.id || `dev-${idx}`} 
                             className="hover:bg-white/[0.02] transition-colors whitespace-nowrap"
                           >
                             {/* 1. رقم الجهاز */}
@@ -2010,6 +2073,48 @@ export default function AccountingInputs() {
                               <div className="flex items-center gap-2">
                                 <Smartphone size={14} className="text-gray-400 shrink-0" />
                                 <span>{device.deviceName}</span>
+
+                                {device.isFrozen && (
+
+                                  <span className="text-[9px] bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded font-bold border border-sky-500/30">مُجمد</span>
+
+                                )}
+
+                              </div>
+
+                            </td>
+
+
+
+                            {/* 2.5 نوع الجهاز */}
+
+                            <td className="p-3 text-gray-300">
+
+                              <div className="flex items-center gap-1.5">
+
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${device.deviceType === "مخصص" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-gray-500/10 text-gray-400 border border-gray-500/20"}`}>
+
+                                  {device.deviceType || "عام"}
+
+                                </span>
+
+                              </div>
+
+                            </td>
+
+
+
+                            {/* 2.5 نوع الجهاز */}
+
+                            <td className="p-3 text-gray-300">
+
+                              <div className="flex items-center gap-1.5">
+
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${device.deviceType === "مخصص" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-gray-500/10 text-gray-400 border border-gray-500/20"}`}>
+
+                                  {device.deviceType || "عام"}
+
+                                </span>
                                 {device.isFrozen && (
                                   <span className="text-[9px] bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded font-bold border border-sky-500/30">مُجمد</span>
                                 )}
@@ -2171,6 +2276,39 @@ export default function AccountingInputs() {
                         ) : (
                           <div className="font-bold text-white text-xs">{detailForm.deviceName || 'غير مسمى'}</div>
                         )}
+
+                      </div>
+
+
+
+                      {/* نوع الجهاز */}
+
+                      <div className="bg-[#1c1c1c] p-3 rounded-2xl border border-white/5 space-y-1">
+
+                        <span className="text-[10px] text-gray-400 font-bold block">نوع الجهاز</span>
+
+                        {isEditingDetailModal ? (
+
+                          <select
+
+                            value={detailForm.deviceType || "عام"}
+
+                            onChange={(e) => setDetailForm({ ...detailForm, deviceType: e.target.value as "مخصص" | "عام" })}
+
+                            className="w-full bg-[#2a2a2a] border border-amber-500/40 rounded-lg px-2.5 py-1 text-xs text-white outline-none"
+
+                          >
+
+                            <option value="مخصص">مخصص</option>
+
+                            <option value="عام">عام</option>
+
+                          </select>
+
+                        ) : (
+
+                          <div className="font-bold text-white text-xs">{detailForm.deviceType || "عام"}</div>
+                        )}
                       </div>
 
                       {/* 4. تاريخ تسجيل الجهاز */}
@@ -2264,8 +2402,8 @@ export default function AccountingInputs() {
                             className="w-full bg-[#2a2a2a] border border-amber-500/40 rounded-lg px-2 py-1 text-xs text-white outline-none"
                           >
                             <option value="">-- اختر مستخدم النظام --</option>
-                            {systemUsers.map((u) => (
-                              <option key={u.id} value={u.name}>{u.name}</option>
+                            {systemUsers.map((u, idx) => (
+                              <option key={u.id || `usr-opt2-${idx}`} value={u.name}>{u.name}</option>
                             ))}
                           </select>
                         ) : (
@@ -2329,6 +2467,25 @@ export default function AccountingInputs() {
                           </button>
 
                           {/* Button 2: حظر خروج نهائي */}
+                          {/* Button 3: حذف الجهاز */}
+
+                          <button
+
+                            type="button"
+
+                            onClick={() => handleDeleteDevice(selectedDeviceForDetail.id)}
+
+                            className="px-4 py-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+
+                          >
+
+                            <Trash2 size={14} />
+
+                            <span>حذف الجهاز</span>
+
+                          </button>
+
+
                           {selectedDeviceForDetail.status !== 'محظور' && (
                             <button
                               type="button"

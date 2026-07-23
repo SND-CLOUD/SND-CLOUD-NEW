@@ -786,7 +786,9 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         const collectionsToClear = [
           'invoices', 'invoice_items', 'customers', 'maintenance_actions', 
           'approval_actions', 'vault_transactions', 
-          'inventory_items', 'document_outputs'
+          'inventory_items', 'document_outputs', 'fin_transaction_types',
+          'fin_funds', 'fin_currencies', 'fin_payment_methods', 'user_devices',
+          'job_titles', 'device_categories', 'device_models', 'engineers'
         ];
         
         let colIdx = 0;
@@ -840,7 +842,9 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       const tablesToClear = [
         'invoices', 'invoice_items', 'customers', 'maintenance_actions', 
         'approval_actions', 'vault_transactions', 
-        'inventory_items', 'document_outputs'
+        'inventory_items', 'document_outputs', 'fin_transaction_types',
+        'fin_funds', 'fin_currencies', 'fin_payment_methods', 'user_devices',
+        'job_titles', 'device_categories', 'device_models', 'engineers'
       ];
       
       let tableIdx = 0;
@@ -928,7 +932,7 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
       const categoryTables = ['device_categories', 'device_models'];
       const engineerTables = ['engineers'];
       const shopTables = ['company_details', 'settings'];
-      const financialTables = ['fin_transaction_types', 'fin_funds', 'fin_currencies', 'fin_payment_methods', 'user_devices'];
+      const financialTables = ['fin_transaction_types', 'fin_funds', 'fin_currencies', 'fin_payment_methods', 'user_devices', 'job_titles'];
 
       const allTables = [...mainTables, ...categoryTables, ...engineerTables, ...shopTables, ...financialTables];
 
@@ -1096,7 +1100,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         'fin_currencies',
         'fin_payment_methods',
         'document_outputs',
-        'user_devices'
+        'user_devices',
+        'job_titles'
       ];
 
       const sourceIsCloud = hybridDbType === 'CLOUD';
@@ -1117,7 +1122,8 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
         'approval_actions',
         'engineers',
         'inventory_items',
-        'document_outputs'
+        'document_outputs',
+        'job_titles'
       ];
 
       let totalBusinessRecords = 0;
@@ -2188,9 +2194,49 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                         const file = e.target.files?.[0];
                                         if (file) {
                                           const reader = new FileReader();
+
                                           reader.onloadend = () => {
-                                            setLogoUrl(reader.result as string);
+
+                                            const img = new Image();
+
+                                            img.onload = () => {
+
+                                              const canvas = document.createElement("canvas");
+
+                                              const MAX_WIDTH = 300;
+
+                                              const MAX_HEIGHT = 300;
+
+                                              let width = img.width;
+
+                                              let height = img.height;
+
+                                              if (width > height) {
+
+                                                if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+
+                                              } else {
+
+                                                if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+
+                                              }
+
+                                              canvas.width = width;
+
+                                              canvas.height = height;
+
+                                              const ctx = canvas.getContext("2d");
+
+                                              ctx?.drawImage(img, 0, 0, width, height);
+
+                                              setLogoUrl(canvas.toDataURL("image/jpeg", 0.7));
+
+                                            };
+
+                                            img.src = reader.result as string;
+
                                           };
+
                                           reader.readAsDataURL(file);
                                         }
                                       }}
@@ -2452,6 +2498,13 @@ export default function Settings({ user, shopConfig, onShopConfigUpdate, onSignO
                                     updatedAt: new Date().toISOString()
                                   };
 
+                                  if (JSON.stringify(updatedConfig).length > 900000) {
+
+                                    (updatedConfig as any).logoUrl = "";
+
+                                    (updatedConfig as any).logo = "";
+
+                                  }
                                   await setDoc(doc(db, 'company_details', 'main_details'), updatedConfig, { merge: true });
                                   localStorage.setItem('snd_country_code', updatedConfig.countryCode);
 

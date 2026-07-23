@@ -46,7 +46,9 @@ export class SyncEngine {
       'fin_funds',
       'fin_currencies',
       'fin_payment_methods',
-      'document_outputs'
+      'document_outputs',
+      'job_titles',
+      'user_devices'
     ];
 
     for (const table of tables) {
@@ -150,6 +152,21 @@ export class SyncEngine {
               for (const gItem of groupItems) {
                 const { tableName, recordId, action, payload } = gItem;
                 const parsedPayload = payload ? JSON.parse(payload) : null;
+                if (payload && payload.length > 900000 && parsedPayload) {
+
+                  if (parsedPayload.data) {
+
+                    if (parsedPayload.data.logoUrl) parsedPayload.data.logoUrl = "";
+
+                    if (parsedPayload.data.logo) parsedPayload.data.logo = "";
+
+                  }
+
+                  if (parsedPayload.logoUrl) parsedPayload.logoUrl = "";
+
+                  if (parsedPayload.logo) parsedPayload.logo = "";
+
+                }
                 const docRef = { name: tableName, id: recordId };
 
                 if (action === 'SET') {
@@ -203,6 +220,21 @@ export class SyncEngine {
             processedIds.add(item.id);
             const { id, tableName, recordId, action, payload } = item;
             const parsedPayload = payload ? JSON.parse(payload) : null;
+                if (payload && payload.length > 900000 && parsedPayload) {
+
+                  if (parsedPayload.data) {
+
+                    if (parsedPayload.data.logoUrl) parsedPayload.data.logoUrl = "";
+
+                    if (parsedPayload.data.logo) parsedPayload.data.logo = "";
+
+                  }
+
+                  if (parsedPayload.logoUrl) parsedPayload.logoUrl = "";
+
+                  if (parsedPayload.logo) parsedPayload.logo = "";
+
+                }
 
             console.log(`SyncEngine: Syncing single operation ${action} on ${tableName}/${recordId}.`);
 
@@ -262,7 +294,9 @@ export class SyncEngine {
         'fin_funds',
         'fin_currencies',
         'fin_payment_methods',
-        'document_outputs'
+        'document_outputs',
+        'job_titles',
+        'user_devices'
       ];
 
       for (const table of tables) {

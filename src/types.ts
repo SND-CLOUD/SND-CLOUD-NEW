@@ -218,7 +218,8 @@ export interface UserDevice {
   id: string; // المعرف الفريد للجهاز UUID
   deviceNumber: number; // رقم الجهاز. تلقائي
   serialImei: string; // الرقم التسلسلي أو imei
-  deviceName: string; // اسم الجهاز في النظام
+  deviceName: string;
+  deviceType?: "مخصص" | "عام"; // اسم الجهاز في النظام
   linkedUserName: string; // اسم مستخدم النظام المرتبط بالجهاز
   linkedUserId?: string; // معرف الحساب للمستخدم المرتبط بالجهاز
   status: 'نشط' | 'معطل' | 'محظور' | string; // حالة الجهاز
